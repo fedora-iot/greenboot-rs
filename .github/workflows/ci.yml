@@ -11,7 +11,7 @@ jobs:
     name: Check spelling
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Check spelling
         uses: codespell-project/actions-codespell@master
         with:
@@ -25,7 +25,7 @@ jobs:
     name: Cargo fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     container: fedora:latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Cache
         uses: actions/cache@v3
         with:
@@ -67,7 +67,7 @@ jobs:
       - name: Install deps
         run: |
           dnf install -y make gcc git cargo rust git grub2-efi grub2-efi-modules shim
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Fix git trust
