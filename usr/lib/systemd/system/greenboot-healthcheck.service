@@ -11,6 +11,7 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/libexec/greenboot/greenboot health-check
 Restart=no
+PrivateMounts=yes
 
 [Install]
 RequiredBy=boot-complete.target
