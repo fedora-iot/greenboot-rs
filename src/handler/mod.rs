@@ -1,9 +1,10 @@
 /// This module contains most of the low-level commands
 /// and grub variable modifications
-use anyhow::{anyhow, bail, Ok, Result};
-
+use anyhow::{anyhow, bail, Context, Ok, Result};
 use std::process::Command;
 use std::str;
+mod mount;
+use mount::{remount_boot_ro, remount_boot_rw};
 
 /// reboots the system if boot_counter is greater than 0 or can be forced too
 pub fn handle_reboot(force: bool) -> Result<()> {
@@ -48,12 +49,13 @@ pub fn set_boot_counter(reboot_count: u16) -> Result<()> {
 
 /// resets grub variable boot_counter
 pub fn unset_boot_counter() -> Result<()> {
+    let _ = remount_boot_rw()?;
     Command::new("grub2-editenv")
         .arg("-")
         .arg("unset")
         .arg("boot_counter")
         .status()?;
-    Ok(())
+    remount_boot_ro().context("Failed to remount /boot as read-only")
 }
 
 /// sets grub variable boot_success
@@ -100,10 +102,11 @@ pub fn get_boot_counter() -> Result<Option<i32>> {
 
 /// helper function to set any grub variable
 fn set_grub_var(key: &str, val: u16) -> Result<()> {
+    let _ = remount_boot_rw()?;
     Command::new("grub2-editenv")
         .arg("-")
         .arg("set")
         .arg(format!("{key}={val}"))
         .status()?;
-    Ok(())
+    remount_boot_ro().context("Failed to remount /boot as read-only")
 }
