@@ -1,11 +1,8 @@
 use log::{info, warn};
-use nix::mount::{MsFlags, mount};
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::process::{Command, Stdio};
 use thiserror::Error;
-
-static BOOT_WAS_RO: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Error)]
 pub enum MountError {
@@ -32,19 +29,34 @@ pub fn remount_boot_ro(mounts_path: &Path) -> Result<(), MountError> {
     match is_boot_rw(mounts_path)? {
         true => {
             info!("Remounting /boot as read-only");
-            mount(
-                None::<&str>,
-                Path::new("/boot"),
-                None::<&str>,
-                MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
-                None::<&str>,
-            )
-            .map_err(|e| {
-                warn!("Failed to remount /boot as RO: {}", e);
-                MountError::RemountFailed(e.to_string())
-            })?;
-            BOOT_WAS_RO.store(true, Ordering::SeqCst);
-            Ok(())
+            let output = Command::new("mount")
+                .arg("-o")
+                .arg("remount,ro")
+                .arg("/boot")
+                .stderr(Stdio::piped()) // Capture stderr for error handling
+                .output();
+
+            match output {
+                Ok(output) => {
+                    if output.status.success() {
+                        Ok(())
+                    } else {
+                        let error_message = String::from_utf8_lossy(&output.stderr);
+                        warn!(
+                            "Failed to remount /boot as RO using shell: {}",
+                            error_message
+                        );
+                        Err(MountError::RemountFailed(error_message.to_string()))
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to execute mount command: {}", e);
+                    Err(MountError::RemountFailed(format!(
+                        "Failed to execute mount: {}",
+                        e
+                    )))
+                }
+            }
         }
         false => {
             info!("/boot is already read-only");
@@ -52,24 +64,40 @@ pub fn remount_boot_ro(mounts_path: &Path) -> Result<(), MountError> {
         }
     }
 }
+
 #[cfg(not(feature = "test-remount"))]
 pub fn remount_boot_rw(mounts_path: &Path) -> Result<(), MountError> {
     match is_boot_rw(mounts_path)? {
         false => {
             info!("Remounting /boot as read-write");
-            mount(
-                None::<&str>,
-                Path::new("/boot"),
-                None::<&str>,
-                MsFlags::MS_REMOUNT | MsFlags::MS_BIND,
-                None::<&str>,
-            )
-            .map_err(|e| {
-                warn!("Failed to remount /boot as RW: {}", e);
-                MountError::RemountFailed(e.to_string())
-            })?;
-            BOOT_WAS_RO.store(true, Ordering::SeqCst);
-            Ok(())
+            let output = Command::new("mount")
+                .arg("-o")
+                .arg("remount,rw")
+                .arg("/boot")
+                .stderr(Stdio::piped()) // Capture stderr for error handling
+                .output();
+
+            match output {
+                Ok(output) => {
+                    if output.status.success() {
+                        Ok(())
+                    } else {
+                        let error_message = String::from_utf8_lossy(&output.stderr);
+                        warn!(
+                            "Failed to remount /boot as RW using shell: {}",
+                            error_message
+                        );
+                        Err(MountError::RemountFailed(error_message.to_string()))
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to execute mount command: {}", e);
+                    Err(MountError::RemountFailed(format!(
+                        "Failed to execute mount: {}",
+                        e
+                    )))
+                }
+            }
         }
         true => {
             info!("/boot is already read-write");
