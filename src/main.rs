@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use config::{Config, File, FileFormat};
 use greenboot::{
@@ -6,6 +6,7 @@ use greenboot::{
     set_boot_counter, set_boot_status, unset_boot_counter,
 };
 use serde::Deserialize;
+use std::process::Command;
 
 /// greenboot config path
 static GREENBOOT_CONFIG_FILE: &str = "/etc/greenboot/greenboot.conf";
@@ -102,12 +103,86 @@ enum Commands {
     Rollback,
 }
 
+/// Check if greenboot-rollback.service successfully ran in the previous boot
+fn check_previous_rollback() -> Result<bool> {
+    log::debug!("Checking journalctl for previous rollback attempts...");
+
+    let output = Command::new("journalctl")
+        .arg("-b")
+        .arg("-1")
+        .arg("-u")
+        .arg("greenboot-rollback.service")
+        .arg("--no-pager")
+        .output()
+        .context("Failed to execute journalctl command to check rollback status")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::warn!(
+            "journalctl command failed with status: {}. Error: {}",
+            output.status,
+            stderr.trim()
+        );
+        return Ok(false);
+    }
+
+    let journal_output =
+        String::from_utf8(output.stdout).context("Failed to parse journalctl output as UTF-8")?;
+
+    if journal_output.trim().is_empty() {
+        log::debug!("No rollback service logs found in previous boot");
+        return Ok(false);
+    }
+
+    // Check for specific success indicators
+    let success = journal_output.contains("Rollback successful");
+
+    log::debug!("Rollback detection result: {}", success);
+    Ok(success)
+}
+
+/// Generate appropriate MOTD message with optional fallback prefix
+/// Generate MOTD message using pre-checked rollback status
+fn generate_motd_message(base_msg: &str, previous_rollback: bool) -> Result<String> {
+    let prefix = if previous_rollback {
+        "FALLBACK BOOT DETECTED! Default bootc deployment has been rolled back.\n"
+    } else {
+        ""
+    };
+    Ok(format!("{prefix}{base_msg}"))
+}
+
 /// triggers the diagnostics followed by the action on the outcome
 /// this also handles setting the grub variables and system restart
 fn health_check() -> Result<()> {
     let config = GreenbootConfig::get_config();
     log::debug!("{config:?}");
-    handle_motd("healthcheck is in progress")?;
+
+    // Check rollback status with graceful error handling
+    let previous_rollback = match check_previous_rollback() {
+        Ok(status) => {
+            if status {
+                log::info!(
+                    "FALLBACK BOOT DETECTED! Default bootc deployment has been rolled back."
+                );
+            }
+            status
+        }
+        Err(e) => {
+            log::warn!(
+                "Failed to check previous rollback status: {}. Defaulting to false.",
+                e
+            );
+            false
+        }
+    };
+
+    // Rest of the function remains the same...
+    handle_motd(&generate_motd_message(
+        "Greenboot healthcheck is in progress",
+        previous_rollback,
+    )?)?;
+
     match run_diagnostics() {
         Ok(()) => {
             log::info!("greenboot health-check passed.");
@@ -116,26 +191,35 @@ fn health_check() -> Result<()> {
                 log::error!("There is a problem with green script runner");
                 errors.iter().for_each(|e| log::error!("{e}"));
             }
-            handle_motd("healthcheck passed - status is GREEN")
-                .unwrap_or_else(|e| log::error!("cannot set motd: {}", e));
+
+            handle_motd(&generate_motd_message(
+                "Greenboot healthcheck passed - status is GREEN",
+                previous_rollback,
+            )?)
+            .unwrap_or_else(|e| log::error!("cannot set motd: {}", e));
             set_boot_status(true, GRUB_PATH, MOUNT_INFO_PATH)?;
             Ok(())
         }
         Err(e) => {
             log::error!("Greenboot error: {e}");
-            handle_motd("healthcheck failed - status is RED")
-                .unwrap_or_else(|e| log::error!("cannot set motd: {}", e));
+
+            handle_motd(&generate_motd_message(
+                "Greenboot healthcheck failed - status is RED",
+                previous_rollback,
+            )?)
+            .unwrap_or_else(|e| log::error!("cannot set motd: {}", e));
             let errors = run_red();
             if !errors.is_empty() {
                 log::error!("There is a problem with red script runner");
                 errors.iter().for_each(|e| log::error!("{e}"));
             }
 
-            set_boot_status(false, GRUB_PATH, MOUNT_INFO_PATH)?;
+            set_boot_status(false, GRUB_PATH, MOUNT_INFO_PATH)
+                .unwrap_or_else(|e| log::error!("cannot set boot_status: {}", e));
             set_boot_counter(config.max_reboot, GRUB_PATH, MOUNT_INFO_PATH)
                 .unwrap_or_else(|e| log::error!("cannot set boot_counter: {}", e));
             handle_reboot(false).unwrap_or_else(|e| log::error!("cannot reboot: {}", e));
-            Err(e)
+            bail!("greenboot healthcheck failed")
         }
     }
 }

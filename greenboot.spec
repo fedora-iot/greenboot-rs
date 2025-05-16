@@ -241,7 +241,7 @@ install -DpZm 0755 usr/lib/greenboot/check/wanted.d/* %{buildroot}%{_prefix}/lib
 %preun
 %systemd_preun greenboot-healthcheck.service
 %systemd_preun greenboot-rollback.service
-%systemd_postun greenboot-success.target
+%systemd_preun greenboot-success.target
 
 %postun
 %systemd_postun greenboot-healthcheck.service

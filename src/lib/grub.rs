@@ -33,8 +33,8 @@ pub fn get_boot_counter(grub_path: &str) -> Result<Option<i32>> {
 /// sets grub variable boot_counter if not set
 pub fn set_boot_counter(reboot_count: u16, grub_path: &str, mount_info_path: &str) -> Result<()> {
     match get_boot_counter(grub_path) {
-        Ok(Some(_)) => {
-            bail!("counter already set to valid value");
+        Ok(Some(i)) => {
+            bail!("already set boot_counter={i}");
         }
         Ok(None) => {
             log::info!("boot_counter does not exists");
