@@ -1,5 +1,6 @@
 use anyhow::{Result, bail};
 use glob::glob;
+use std::collections::HashSet;
 use std::error::Error;
 use std::path::Path;
 use std::process::Command;
@@ -8,109 +9,162 @@ use std::process::Command;
 static GREENBOOT_INSTALL_PATHS: [&str; 2] = ["/usr/lib/greenboot", "/etc/greenboot"];
 
 /// runs all the scripts in required.d and wanted.d
-pub fn run_diagnostics() -> Result<()> {
-    let mut required_script_failure: bool = false;
-    let mut path_exists: bool = false;
+pub fn run_diagnostics(skipped: Vec<String>) -> Result<Vec<String>> {
+    let mut required_script_failure = false;
+    let mut path_exists = false;
+    let mut all_skipped = HashSet::new();
+
+    // Convert input skipped Vec to HashSet for efficient lookups
+    let disabled_scripts: HashSet<String> = skipped.clone().into_iter().collect();
+
+    // Run required checks
     for path in GREENBOOT_INSTALL_PATHS {
-        let greenboot_required_path = format!("{path}/check/required.d/");
+        let greenboot_required_path = format!("{}/check/required.d/", path);
         if !Path::new(&greenboot_required_path).is_dir() {
-            log::warn!("skipping test as {greenboot_required_path} is not a dir");
+            log::warn!("skipping test as {} is not a dir", greenboot_required_path);
             continue;
         }
         path_exists = true;
-        let errors = run_scripts("required", &greenboot_required_path);
-        if !errors.is_empty() {
+        let result = run_scripts("required", &greenboot_required_path, Some(&skipped));
+        all_skipped.extend(result.skipped);
+
+        if !result.errors.is_empty() {
             log::error!("required script error:");
-            errors.iter().for_each(|e| log::error!("{e}"));
-            if !required_script_failure {
-                required_script_failure = true;
-            }
+            result.errors.iter().for_each(|e| log::error!("{e}"));
+            required_script_failure = true;
         }
     }
+
     if !path_exists {
         bail!("cannot find any required.d folder");
     }
+
+    // Run wanted checks
     for path in GREENBOOT_INSTALL_PATHS {
-        let greenboot_wanted_path = format!("{path}/check/wanted.d/");
-        let errors = run_scripts("wanted", &greenboot_wanted_path);
-        if !errors.is_empty() {
+        let greenboot_wanted_path = format!("{}/check/wanted.d/", path);
+        let result = run_scripts("wanted", &greenboot_wanted_path, Some(&skipped));
+        all_skipped.extend(result.skipped);
+
+        if !result.errors.is_empty() {
             log::warn!("wanted script runner error:");
-            errors.iter().for_each(|e| log::error!("{e}"));
+            result.errors.iter().for_each(|e| log::error!("{e}"));
         }
+    }
+
+    // Check for disabled scripts that weren't found
+    let missing_disabled: Vec<String> = disabled_scripts
+        .difference(&all_skipped)
+        .map(|s| s.to_string()) // Convert &String to String
+        .collect();
+
+    if !missing_disabled.is_empty() {
+        log::warn!(
+            "The following disabled scripts were not found in any directory: {:?}",
+            missing_disabled
+        );
     }
 
     if required_script_failure {
         bail!("health-check failed!");
     }
-    Ok(())
+    Ok(missing_disabled)
 }
 
-/// runs all the scripts in red.d when health-check fails
+// runs all the scripts in red.d when health-check fails
 pub fn run_red() -> Vec<Box<dyn Error>> {
     let mut errors = Vec::new();
+
     for path in GREENBOOT_INSTALL_PATHS {
-        let red_path = format!("{path}/red.d/");
-        let e = run_scripts("red", &red_path);
-        if !e.is_empty() {
-            errors.extend(e);
-        }
+        let red_path = format!("{}/red.d/", path);
+        let result = run_scripts("red", &red_path, None); // Pass None for disabled scripts
+        errors.extend(result.errors);
     }
+
     errors
 }
 
 /// runs all the scripts green.d when health-check passes
 pub fn run_green() -> Vec<Box<dyn Error>> {
     let mut errors = Vec::new();
+
     for path in GREENBOOT_INSTALL_PATHS {
-        let green_path = format!("{path}/green.d/");
-        let e = run_scripts("green", &green_path);
-        if !e.is_empty() {
-            errors.extend(e);
-        }
+        let green_path = format!("{}/green.d/", path);
+        let result = run_scripts("green", &green_path, None); // Pass None for disabled scripts
+        errors.extend(result.errors);
     }
+
     errors
 }
 
-/// takes in a path and runs all the .sh files within the path
-/// returns false if any script fails
-fn run_scripts(name: &str, path: &str) -> Vec<Box<dyn Error>> {
-    let mut errors = Vec::new();
-    let scripts = format!("{path}*.sh");
-    match glob(&scripts) {
-        Ok(s) => {
-            for entry in s.flatten() {
-                log::info!("running {name} check {}", entry.to_string_lossy());
-                let output = Command::new("bash").arg("-C").arg(entry.clone()).output();
-                match output {
-                    Ok(o) => {
-                        if !o.status.success() {
-                            errors.push(Box::new(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                format!(
-                                    "{name} script {} failed! \n{} \n{}",
-                                    entry.to_string_lossy(),
-                                    String::from_utf8_lossy(&o.stdout),
-                                    String::from_utf8_lossy(&o.stderr)
-                                ),
-                            )) as Box<dyn Error>);
-                        } else {
-                            log::info!("{name} script {} success!", entry.to_string_lossy());
-                        }
-                    }
-                    Err(e) => {
-                        errors.push(Box::new(e) as Box<dyn Error>);
-                    }
-                }
+struct ScriptRunResult {
+    errors: Vec<Box<dyn Error>>,
+    skipped: Vec<String>,
+}
+
+fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> ScriptRunResult {
+    let mut result = ScriptRunResult {
+        errors: Vec::new(),
+        skipped: Vec::new(),
+    };
+
+    // Handle glob pattern error early
+    let entries = match glob(&format!("{}*.sh", path)) {
+        Ok(e) => e,
+        Err(e) => {
+            result.errors.push(Box::new(e));
+            return result;
+        }
+    };
+
+    for entry in entries.flatten() {
+        // Process script name
+        let script_name = match entry.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name,
+            None => continue,
+        };
+
+        // Check if script should be skipped
+        if let Some(disabled) = disabled_scripts {
+            if disabled.contains(&script_name.to_string()) {
+                log::info!("Skipping disabled script: {}", script_name);
+                result.skipped.push(script_name.to_string());
+                continue;
             }
         }
-        Err(e) => errors.push(Box::new(e) as Box<dyn Error>),
+
+        log::info!("running {} check {}", name, entry.to_string_lossy());
+
+        // Execute script and handle output
+        let output = Command::new("bash").arg("-C").arg(&entry).output();
+
+        match output {
+            Ok(o) if o.status.success() => {
+                log::info!("{} script {} success!", name, entry.to_string_lossy());
+            }
+            Ok(o) => {
+                let error_msg = format!(
+                    "{} script {} failed!\n{}\n{}",
+                    name,
+                    entry.to_string_lossy(),
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                );
+                result.errors.push(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    error_msg,
+                )));
+            }
+            Err(e) => {
+                result.errors.push(Box::new(e));
+            }
+        }
     }
-    errors
+
+    result
 }
 
 #[cfg(test)]
 mod test {
-
     use super::*;
     use anyhow::{Context, Result};
     use std::fs;
@@ -121,7 +175,7 @@ mod test {
     #[test]
     fn missing_required_folder() {
         assert_eq!(
-            run_diagnostics().unwrap_err().to_string(),
+            run_diagnostics(vec![]).unwrap_err().to_string(),
             String::from("cannot find any required.d folder")
         );
     }
@@ -131,7 +185,7 @@ mod test {
         setup_folder_structure(true)
             .context("Test setup failed")
             .unwrap();
-        let state = run_diagnostics();
+        let state = run_diagnostics(vec![]);
         assert!(state.is_ok());
         tear_down().context("Test teardown failed").unwrap();
     }
@@ -141,8 +195,41 @@ mod test {
         setup_folder_structure(false)
             .context("Test setup failed")
             .unwrap();
-        let failed_msg = run_diagnostics().unwrap_err().to_string();
+        let failed_msg = run_diagnostics(vec![]).unwrap_err().to_string();
         assert_eq!(failed_msg, String::from("health-check failed!"));
+        tear_down().context("Test teardown failed").unwrap();
+    }
+
+    #[test]
+    fn test_skip_nonexistent_script() {
+        let nonexistent_script_name = "nonexistent_script.sh".to_string();
+        setup_folder_structure(true)
+            .context("Test setup failed")
+            .unwrap();
+
+        // Try to skip a script that doesn't exist
+        let state = run_diagnostics(vec![nonexistent_script_name.clone()]);
+        assert!(
+            state.unwrap().contains(&nonexistent_script_name),
+            "non existent script names did not match"
+        );
+
+        tear_down().context("Test teardown failed").unwrap();
+    }
+
+    #[test]
+    fn test_skip_failing_script() {
+        setup_folder_structure(false)
+            .context("Test setup failed")
+            .unwrap();
+
+        // Skip the failing script in required.d
+        let state = run_diagnostics(vec!["failing_script.sh".to_string()]);
+        assert!(
+            state.is_ok(),
+            "Should pass when skipping failing required script"
+        );
+
         tear_down().context("Test teardown failed").unwrap();
     }
 
@@ -154,31 +241,34 @@ mod test {
 
         fs::create_dir_all(&required_path).expect("cannot create folder");
         fs::create_dir_all(&wanted_path).expect("cannot create folder");
-        let _a = fs::copy(
+
+        // Create passing script in both required and wanted
+        fs::copy(
             passing_test_scripts,
             format!("{}/passing_script.sh", &required_path),
         )
-        .context("unable to copy test assets");
+        .context("unable to copy passing script to required.d")?;
 
-        let _a = fs::copy(
+        fs::copy(
             passing_test_scripts,
             format!("{}/passing_script.sh", &wanted_path),
         )
-        .context("unable to copy test assets");
+        .context("unable to copy passing script to wanted.d")?;
 
-        let _a = fs::copy(
+        // Create failing script in wanted.d
+        fs::copy(
             failing_test_scripts,
             format!("{}/failing_script.sh", &wanted_path),
         )
-        .context("unable to copy test assets");
+        .context("unable to copy failing script to wanted.d")?;
 
         if !passing {
-            let _a = fs::copy(
+            // Create failing script in required.d for failure cases
+            fs::copy(
                 failing_test_scripts,
                 format!("{}/failing_script.sh", &required_path),
             )
-            .context("unable to copy test assets");
-            return Ok(());
+            .context("unable to copy failing script to required.d")?;
         }
         Ok(())
     }

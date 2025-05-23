@@ -104,12 +104,13 @@ pub fn remount_boot_rw(mounts_path: &Path) -> Result<(), MountError> {
     }
 }
 
+/// For testing without actually remounting /mount
 #[cfg(feature = "test-remount")]
 pub fn remount_boot_rw(_mounts_path: &Path) -> Result<(), MountError> {
     // Stubbed for testing
     Ok(())
 }
-
+/// For testing without actually remounting /mount
 #[cfg(feature = "test-remount")]
 pub fn remount_boot_ro(_mounts_path: &Path) -> Result<(), MountError> {
     Ok(())

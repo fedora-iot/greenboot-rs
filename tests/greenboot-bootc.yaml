@@ -119,6 +119,29 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    # case: check disable health checks
+    - name: check disable health checks
+      block:
+        - name: disable health checks log should be found here
+          shell: journalctl -b -0 -u greenboot -u greenboot-healthcheck
+          become: yes
+          register: result_disable
+
+        - assert:
+            that:
+              - "'Skipping disabled script: 01_repository_dns_check.sh' in result_disable.stdout"
+              - "'The following disabled scripts were not found in any directory: [\"not_exit.sh\"]' in result_disable.stdout"
+            fail_msg: "Disable health checks log not found"
+            success_msg: "Found disable health checks log"
+
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
     # case: check boot times
     - name: check boot times
       block:

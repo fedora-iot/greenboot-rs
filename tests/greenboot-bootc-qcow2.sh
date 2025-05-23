@@ -168,6 +168,7 @@ RUN dnf install -y \
     /tmp/greenboot-*.rpm && \
     systemctl enable greenboot-healthcheck.service greenboot-rollback.service greenboot-success.target
 RUN sed -i "s/GREENBOOT_MAX_BOOT_ATTEMPTS=3/GREENBOOT_MAX_BOOT_ATTEMPTS=5/g" /etc/greenboot/greenboot.conf
+RUN sed -i 's#DISABLED_HEALTHCHECKS=()#DISABLED_HEALTHCHECKS=("01_repository_dns_check.sh" "not_exit.sh")#g' /etc/greenboot/greenboot.conf
 # Clean up by removing the local RPMs if desired
 RUN rm -f /tmp/greenboot-*.rpm
 EOF
