@@ -4,6 +4,8 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::path::Path;
 use std::process::Command;
+use std::os::unix::fs::PermissionsExt; // ! This is new ! May need to add to the .spec file that this is needed.
+use std::fs;
 
 /// dir that greenboot looks for the health check and other scripts
 static GREENBOOT_INSTALL_PATHS: [&str; 2] = ["/usr/lib/greenboot", "/etc/greenboot"];
@@ -98,15 +100,33 @@ struct ScriptRunResult {
     skipped: Vec<String>,
 }
 
+// This returns a structure that contains the files within the file path that 
 fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> ScriptRunResult {
+    // Creating a new vector here to store the result of a script that's been run.
     let mut result = ScriptRunResult {
         errors: Vec::new(),
         skipped: Vec::new(),
     };
 
-    // Handle glob pattern error early
-    let entries = match glob(&format!("{}*.sh", path)) {
-        Ok(e) => e,
+    // Have two different sturctures for binaries and shell scripts because the latter doesn't have
+    // executable permisions by default and may require a different command to run than binaries.
+    let entries_binaries = match glob(&format!("{}*", path)) {
+        Ok(e) => {
+            let binaries: Vec<_> = e
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                if let Ok(metadata) = fs::metadata(entry) {
+                    let mode = metadata.permissions().mode();
+                    metadata.is_file()
+                    && entry.extension().and_then(|ext| ext.to_str()) != Some("sh")
+                    && (mode & 0o001 != 0 || mode & 0o010 != 0 || mode & 0o100 != 0)
+                } else {
+                    false
+                }
+            })
+            .collect();
+            Some(binaries)
+        }
         Err(e) => {
             result.errors.push(Box::new(e));
             return result;
@@ -162,6 +182,55 @@ fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> S
         }
     }
 
+    for entry in entries_binaries.into_iter().flatten() {
+        // Process script name
+        let script_name = match entry.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name,
+            None => continue,
+        };
+
+        // Check if script should be skipped
+        if let Some(disabled) = disabled_scripts {
+            if disabled.contains(&script_name.to_string()) {
+                log::info!("Skipping disabled script: {}", script_name);
+                result.skipped.push(script_name.to_string());
+                continue;
+            }
+        }
+
+        log::info!("running {} check {}", name, entry.to_string_lossy());
+
+        // Execute script and handle output
+        let output = Command::new("./").arg(&entry).output(); // This must be kept since bash scripts by default need this to run
+
+        match output {
+            Ok(o) if o.status.success() => {
+                log::info!("{} script {} success!", name, entry.to_string_lossy());
+            }
+            Ok(o) => {
+                let error_msg = format!(
+                    "{} script {} failed!\n{}\n{}",
+                    name,
+                    entry.to_string_lossy(),
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                );
+                result
+                    .errors
+                    .push(Box::new(std::io::Error::other(error_msg)));
+                if name == "required" {
+                    break;
+                }
+            }
+            Err(e) => {
+                result.errors.push(Box::new(e));
+                if name == "required" {
+                    break;
+                }
+            }
+        }
+    }
+
     result
 }
 
@@ -185,6 +254,7 @@ mod test {
     static GREENBOOT_INSTALL_PATHS: [&str; 2] = ["/usr/lib/greenboot", "/etc/greenboot"];
 
     /// validate when the required folder is not found
+    // No change needed here for me, this doesn't involve executing any scripts.
     #[test]
     fn test_missing_required_folder() {
         let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
@@ -198,6 +268,7 @@ mod test {
     }
 
     #[test]
+    // This tests the output of something I will have changed, but I don't need to change anything for this test.
     fn test_passed_diagnostics() {
         setup_folder_structure(true)
             .context("Test setup failed")
@@ -257,6 +328,9 @@ mod test {
     }
 
     #[test]
+    // ! This many need to be changed !
+    // It's test requires a .sh file, which I most likely will leave alone, but I just wanted to make this
+    // for myself since I may need to add something extra for binary files.
     fn test_skip_nonexistent_script() {
         let nonexistent_script_name = "nonexistent_script.sh".to_string();
         setup_folder_structure(true)
