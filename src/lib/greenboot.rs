@@ -2,6 +2,8 @@ use anyhow::{Result, bail};
 use glob::glob;
 use std::collections::HashSet;
 use std::error::Error;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
@@ -104,9 +106,23 @@ fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> S
         skipped: Vec::new(),
     };
 
-    // Handle glob pattern error early
-    let entries = match glob(&format!("{}*.sh", path)) {
-        Ok(e) => e,
+    let entries = match glob(&format!("{}*", path)) {
+        Ok(e) => {
+            let valid: Vec<_> = e
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    if let Ok(metadata) = fs::metadata(entry) {
+                        let mode = metadata.permissions().mode();
+                        metadata.is_file()
+                            && (entry.extension().and_then(|ext| ext.to_str()) == Some("sh")
+                                || (mode & 0o001 != 0 || mode & 0o010 != 0 || mode & 0o100 != 0))
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+            Some(valid).into_iter()
+        }
         Err(e) => {
             result.errors.push(Box::new(e));
             return result;
@@ -115,24 +131,28 @@ fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> S
 
     for entry in entries.flatten() {
         // Process script name
-        let script_name = match entry.file_name().and_then(|n| n.to_str()) {
+        let file_name = match entry.file_name().and_then(|n| n.to_str()) {
             Some(name) => name,
             None => continue,
         };
 
         // Check if script should be skipped
         if let Some(disabled) = disabled_scripts {
-            if disabled.contains(&script_name.to_string()) {
-                log::info!("Skipping disabled script: {}", script_name);
-                result.skipped.push(script_name.to_string());
+            if disabled.contains(&file_name.to_string()) {
+                log::info!("Skipping disabled script: {}", file_name);
+                result.skipped.push(file_name.to_string());
                 continue;
             }
         }
 
         log::info!("running {} check {}", name, entry.to_string_lossy());
 
-        // Execute script and handle output
-        let output = Command::new("bash").arg("-C").arg(&entry).output();
+        // Sort between script and binary since they require different commands to execute properly.
+        let output = if entry.extension().and_then(|ext| ext.to_str()) == Some("sh") {
+            Command::new("bash").arg("-C").arg(&entry).output()
+        } else {
+            Command::new(&entry).output()
+        };
 
         match output {
             Ok(o) if o.status.success() => {
@@ -213,6 +233,11 @@ mod test {
         setup_folder_structure(false)
             .context("Test setup failed")
             .unwrap();
+        // Causes errors if these are no removed since they cause an excess amount
+        // of failure.
+        let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
+        let _ = std::fs::remove_file(format!("{}/01_failing_binary", required_path));
+        let _ = std::fs::remove_file(format!("{}/02_failing_binary", required_path));
 
         let base_path = GREENBOOT_INSTALL_PATHS[1];
 
@@ -279,6 +304,12 @@ mod test {
             .context("Test setup failed")
             .unwrap();
 
+        // Removing extra failing binaries because this can cause a
+        // failure if not added to the skips or removed as done below.
+        let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
+        let _ = std::fs::remove_file(format!("{}/01_failing_binary", required_path));
+        let _ = std::fs::remove_file(format!("{}/02_failing_binary", required_path));
+
         // Skip the disabled script in required.d ,since there are two
         // failing- scripts passing them both so that this test passes.
         let state = run_diagnostics(vec![
@@ -293,11 +324,41 @@ mod test {
         tear_down().context("Test teardown failed").unwrap();
     }
 
+    // Since binaries are a separate and later added feature compared to
+    // scripts, there should be a separate test to ensure they both work.
+    #[test]
+    fn test_skip_disabled_binary() {
+        setup_folder_structure(false)
+            .context("Test setup failed")
+            .unwrap();
+
+        // Removing extra failing scripts because this can cause a
+        // failure if not added to the skips or removed as done below
+        let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
+        let _ = std::fs::remove_file(format!("{}/01_failing_script.sh", required_path));
+        let _ = std::fs::remove_file(format!("{}/02_failing_script.sh", required_path));
+
+        // Skip the disabled script in required.d ,since there are two
+        // failing- scripts passing them both so that this test passes.
+        let state = run_diagnostics(vec![
+            "01_failing_binary".to_string(),
+            "02_failing_binary".to_string(),
+        ]);
+        assert!(
+            state.is_ok(),
+            "Should pass when skipping disabled required binary"
+        );
+
+        tear_down().context("Test teardown failed").unwrap();
+    }
+
     fn setup_folder_structure(passing: bool) -> Result<()> {
         let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
         let wanted_path = format!("{}/check/wanted.d", GREENBOOT_INSTALL_PATHS[1]);
         let passing_test_scripts = "testing_assets/passing_script.sh";
         let failing_test_scripts = "testing_assets/failing_script.sh";
+        let passing_test_binary = "testing_assets/passing_binary";
+        let failing_test_binary = "testing_assets/failing_binary";
 
         fs::create_dir_all(&required_path).expect("cannot create folder");
         fs::create_dir_all(&wanted_path).expect("cannot create folder");
@@ -315,12 +376,32 @@ mod test {
         )
         .context("unable to copy passing script to wanted.d")?;
 
+        // Create passing binary in both required and wanted
+        fs::copy(
+            passing_test_binary,
+            format!("{}/passing_binary", &required_path),
+        )
+        .context("unable to copy passing binary to required.d")?;
+
+        fs::copy(
+            passing_test_binary,
+            format!("{}/passing_binary", &wanted_path),
+        )
+        .context("unable to copy passing binary to wanted.d")?;
+
         // Create failing script in wanted.d
         fs::copy(
             failing_test_scripts,
             format!("{}/failing_script.sh", &wanted_path),
         )
         .context("unable to copy failing script to wanted.d")?;
+
+        // Create failing binary in wanted.d
+        fs::copy(
+            failing_test_binary,
+            format!("{}/failing_binary", &wanted_path),
+        )
+        .context("unable to copy failing binary to wanted.d")?;
 
         if !passing {
             // Create multiple failing script in required.d for failure cases
@@ -334,6 +415,18 @@ mod test {
                 format!("{}/02_failing_script.sh", &required_path),
             )
             .context("unable to copy another failing script to required.d")?;
+
+            // Create multiple failing binaries in required.d for failure cases
+            fs::copy(
+                failing_test_scripts,
+                format!("{}/01_failing_binary", &required_path),
+            )
+            .context("unable to copy failing binary to required.d")?;
+            fs::copy(
+                failing_test_scripts,
+                format!("{}/02_failing_binary", &required_path),
+            )
+            .context("unable to copy another failing binary to required.d")?;
         }
         Ok(())
     }
