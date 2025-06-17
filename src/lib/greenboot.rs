@@ -130,13 +130,13 @@ fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> S
     };
 
     for entry in entries.flatten() {
-        // Process script name
+        // Process script/binary name
         let file_name = match entry.file_name().and_then(|n| n.to_str()) {
             Some(name) => name,
             None => continue,
         };
 
-        // Check if script should be skipped
+        // Check if script/binary should be skipped
         if let Some(disabled) = disabled_scripts {
             if disabled.contains(&file_name.to_string()) {
                 log::info!("Skipping disabled script: {}", file_name);
@@ -147,7 +147,7 @@ fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> S
 
         log::info!("running {} check {}", name, entry.to_string_lossy());
 
-        // Sort between script and binary since they require different commands to execute properly.
+        // Sort between scripts and binaries since they require different commands to execute properly.
         let output = if entry.extension().and_then(|ext| ext.to_str()) == Some("sh") {
             Command::new("bash").arg("-C").arg(&entry).output()
         } else {
@@ -233,8 +233,8 @@ mod test {
         setup_folder_structure(false)
             .context("Test setup failed")
             .unwrap();
-        // Causes errors if these are no removed since they cause an excess amount
-        // of failure.
+        // Causes errors if these are not removed since they cause an excess amount
+        // of failures.
         let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
         let _ = std::fs::remove_file(format!("{}/01_failing_binary", required_path));
         let _ = std::fs::remove_file(format!("{}/02_failing_binary", required_path));
