@@ -164,6 +164,29 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    # case: check binary file support
+    - name: check binary file support
+      block:
+        - name: binary file check result should be found here
+          shell: journalctl -b -0 -u greenboot -u greenboot-healthcheck
+          become: yes
+          register: result_binary
+
+        - assert:
+            that:
+              - "'required script /etc/greenboot/check/required.d/passing_binary success!' in result_binary.stdout"
+              - "'wanted script /etc/greenboot/check/wanted.d/failing_binary failed!' in result_binary.stdout"
+            fail_msg: "Binary file check log not found"
+            success_msg: "Found binary file check log"
+
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
     # case: check boot times
     - name: check boot times
       block:

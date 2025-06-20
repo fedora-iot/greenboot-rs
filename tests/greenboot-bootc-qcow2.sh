@@ -150,7 +150,9 @@ fi
 greenprint "Building greenboot packages"
 pushd .. && \
 make rpm
-cp rpmbuild/RPMS/x86_64/*.rpm tests/ && popd
+cp rpmbuild/RPMS/x86_64/*.rpm tests/
+cp testing_assets/passing_binary tests/
+cp testing_assets/failing_binary tests/ && popd
 
 ###########################################################
 ##
@@ -169,6 +171,8 @@ RUN dnf install -y \
     systemctl enable greenboot-healthcheck.service greenboot-rollback.service greenboot-success.target
 RUN sed -i "s/GREENBOOT_MAX_BOOT_ATTEMPTS=3/GREENBOOT_MAX_BOOT_ATTEMPTS=5/g" /etc/greenboot/greenboot.conf
 RUN sed -i 's#DISABLED_HEALTHCHECKS=()#DISABLED_HEALTHCHECKS=("01_repository_dns_check.sh" "not_exit.sh")#g' /etc/greenboot/greenboot.conf
+COPY passing_binary /etc/greenboot/check/required.d/
+COPY failing_binary /etc/greenboot/check/wanted.d/
 # Clean up by removing the local RPMs if desired
 RUN rm -f /tmp/greenboot-*.rpm
 EOF
