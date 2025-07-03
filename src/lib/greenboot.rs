@@ -207,14 +207,16 @@ mod test {
     /// validate when the required folder is not found
     #[test]
     fn test_missing_required_folder() {
-        let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
-        if Path::new(&required_path).exists() {
-            fs::remove_dir_all(&required_path).unwrap();
+        for path in GREENBOOT_INSTALL_PATHS {
+            let required_path = format!("{}/check/required.d", path);
+            if Path::new(&required_path).exists() {
+                fs::remove_dir_all(&required_path).unwrap();
+            }
+            assert_eq!(
+                run_diagnostics(vec![]).unwrap_err().to_string(),
+                String::from("cannot find any required.d folder")
+            );
         }
-        assert_eq!(
-            run_diagnostics(vec![]).unwrap_err().to_string(),
-            String::from("cannot find any required.d folder")
-        );
     }
 
     #[test]
@@ -233,50 +235,57 @@ mod test {
         setup_folder_structure(false)
             .context("Test setup failed")
             .unwrap();
-        // Causes errors if these are not removed since they cause an excess amount
-        // of failures.
-        let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
-        let _ = std::fs::remove_file(format!("{}/01_failing_binary", required_path));
-        let _ = std::fs::remove_file(format!("{}/02_failing_binary", required_path));
 
-        let base_path = GREENBOOT_INSTALL_PATHS[1];
+        for base_path in GREENBOOT_INSTALL_PATHS {
+            // Causes errors if these are not removed since they cause an excess amount
+            // of failures.
+            let _ = std::fs::remove_file(format!("{}/01_failing_binary", base_path));
+            let _ = std::fs::remove_file(format!("{}/02_failing_binary", base_path));
 
-        let counter_file = format!("{}/fail_counter.txt", base_path);
-        let mut file = File::create(&counter_file).expect("Failed to create counter file");
-        writeln!(file, "0").unwrap();
+            let counter_file = format!("{}/fail_counter.txt", base_path);
+            let mut file = File::create(&counter_file).expect("Failed to create counter file");
+            writeln!(file, "0").unwrap();
 
-        // Inject counter logic into the failing scripts
-        for name in ["01_failing_script", "02_failing_script"] {
-            let path = format!("{}/check/required.d/{}.sh", base_path, name);
-            let mut script = File::create(&path).unwrap();
-            writeln!(
-                script,
-                "#!/bin/bash\nCOUNTER_FILE=\"{}\"\ncount=$(cat $COUNTER_FILE)\necho $((count + 1)) >| $COUNTER_FILE\nexit 1",
-                counter_file
-            ).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            // Inject counter logic into the failing scripts
+            for name in ["01_failing_script", "02_failing_script"] {
+                let path = format!("{}/check/required.d/{}.sh", base_path, name);
+                let mut script = File::create(&path).unwrap();
+                writeln!(
+                    script,
+                    "#!/bin/bash\nCOUNTER_FILE=\"{}\"\ncount=$(cat $COUNTER_FILE)\necho $((count + 1)) >| $COUNTER_FILE\nexit 1",
+                    counter_file
+                ).unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+
+            let result = run_diagnostics(vec![]);
+            log::debug!("Diagnostics result: {:?}", result);
+
+            assert!(result.is_err());
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "required health-check failed, skipping remaining scripts"
+            );
+
+            log::info!("Health check failed as expected.");
+
+            let fail_script_count = fs::read_to_string(counter_file)
+                .unwrap()
+                .trim()
+                .parse::<u32>()
+                .unwrap();
+            assert_eq!(
+                fail_script_count, 1,
+                "Only one failing script should have executed"
+            );
+
+            // Clean up the created scripts
+            // Necessary as otherwise they will trip up other install paths
+            for name in ["01_failing_script", "02_failing_script"] {
+                fs::remove_file(format!("{}/check/required.d/{}.sh", base_path, name))
+                    .expect("Failed to remove script file");
+            }
         }
-
-        let result = run_diagnostics(vec![]);
-        log::debug!("Diagnostics result: {:?}", result);
-
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "required health-check failed, skipping remaining scripts"
-        );
-
-        log::info!("Health check failed as expected.");
-
-        let fail_script_count = fs::read_to_string(counter_file)
-            .unwrap()
-            .trim()
-            .parse::<u32>()
-            .unwrap();
-        assert_eq!(
-            fail_script_count, 1,
-            "Only one failing script should have executed"
-        );
 
         tear_down().expect("teardown failed");
     }
@@ -306,9 +315,11 @@ mod test {
 
         // Removing extra failing binaries because this can cause a
         // failure if not added to the skips or removed as done below.
-        let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
-        let _ = std::fs::remove_file(format!("{}/01_failing_binary", required_path));
-        let _ = std::fs::remove_file(format!("{}/02_failing_binary", required_path));
+        for base_path in GREENBOOT_INSTALL_PATHS {
+            let required_path = format!("{}/check/required.d", base_path);
+            let _ = std::fs::remove_file(format!("{}/01_failing_binary", required_path));
+            let _ = std::fs::remove_file(format!("{}/02_failing_binary", required_path));
+        }
 
         // Skip the disabled script in required.d ,since there are two
         // failing- scripts passing them both so that this test passes.
@@ -334,9 +345,11 @@ mod test {
 
         // Removing extra failing scripts because this can cause a
         // failure if not added to the skips or removed as done below
-        let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
-        let _ = std::fs::remove_file(format!("{}/01_failing_script.sh", required_path));
-        let _ = std::fs::remove_file(format!("{}/02_failing_script.sh", required_path));
+        for base_path in GREENBOOT_INSTALL_PATHS {
+            let required_path = format!("{}/check/required.d", base_path);
+            let _ = std::fs::remove_file(format!("{}/01_failing_script.sh", required_path));
+            let _ = std::fs::remove_file(format!("{}/02_failing_script.sh", required_path));
+        }
 
         // Skip the disabled script in required.d ,since there are two
         // failing- scripts passing them both so that this test passes.
@@ -353,86 +366,90 @@ mod test {
     }
 
     fn setup_folder_structure(passing: bool) -> Result<()> {
-        let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
-        let wanted_path = format!("{}/check/wanted.d", GREENBOOT_INSTALL_PATHS[1]);
         let passing_test_scripts = "testing_assets/passing_script.sh";
         let failing_test_scripts = "testing_assets/failing_script.sh";
         let passing_test_binary = "testing_assets/passing_binary";
         let failing_test_binary = "testing_assets/failing_binary";
 
-        fs::create_dir_all(&required_path).expect("cannot create folder");
-        fs::create_dir_all(&wanted_path).expect("cannot create folder");
+        for install_path in GREENBOOT_INSTALL_PATHS {
+            let required_path = format!("{}/check/required.d", install_path);
+            let wanted_path = format!("{}/check/wanted.d", install_path);
+            fs::create_dir_all(&required_path).expect("cannot create folder");
+            fs::create_dir_all(&wanted_path).expect("cannot create folder");
 
-        // Create passing script in both required and wanted
-        fs::copy(
-            passing_test_scripts,
-            format!("{}/passing_script.sh", &required_path),
-        )
-        .context("unable to copy passing script to required.d")?;
+            // Create passing script in both required and wanted
+            fs::copy(
+                passing_test_scripts,
+                format!("{}/passing_script.sh", &required_path),
+            )
+            .context("unable to copy passing script to required.d")?;
 
-        fs::copy(
-            passing_test_scripts,
-            format!("{}/passing_script.sh", &wanted_path),
-        )
-        .context("unable to copy passing script to wanted.d")?;
+            fs::copy(
+                passing_test_scripts,
+                format!("{}/passing_script.sh", &wanted_path),
+            )
+            .context("unable to copy passing script to wanted.d")?;
 
-        // Create passing binary in both required and wanted
-        fs::copy(
-            passing_test_binary,
-            format!("{}/passing_binary", &required_path),
-        )
-        .context("unable to copy passing binary to required.d")?;
+            // Create passing binary in both required and wanted
+            fs::copy(
+                passing_test_binary,
+                format!("{}/passing_binary", &required_path),
+            )
+            .context("unable to copy passing binary to required.d")?;
 
-        fs::copy(
-            passing_test_binary,
-            format!("{}/passing_binary", &wanted_path),
-        )
-        .context("unable to copy passing binary to wanted.d")?;
+            fs::copy(
+                passing_test_binary,
+                format!("{}/passing_binary", &wanted_path),
+            )
+            .context("unable to copy passing binary to wanted.d")?;
 
-        // Create failing script in wanted.d
-        fs::copy(
-            failing_test_scripts,
-            format!("{}/failing_script.sh", &wanted_path),
-        )
-        .context("unable to copy failing script to wanted.d")?;
-
-        // Create failing binary in wanted.d
-        fs::copy(
-            failing_test_binary,
-            format!("{}/failing_binary", &wanted_path),
-        )
-        .context("unable to copy failing binary to wanted.d")?;
-
-        if !passing {
-            // Create multiple failing script in required.d for failure cases
+            // Create failing script in wanted.d
             fs::copy(
                 failing_test_scripts,
-                format!("{}/01_failing_script.sh", &required_path),
+                format!("{}/failing_script.sh", &wanted_path),
             )
-            .context("unable to copy failing script to required.d")?;
-            fs::copy(
-                failing_test_scripts,
-                format!("{}/02_failing_script.sh", &required_path),
-            )
-            .context("unable to copy another failing script to required.d")?;
+            .context("unable to copy failing script to wanted.d")?;
 
-            // Create multiple failing binaries in required.d for failure cases
+            // Create failing binary in wanted.d
             fs::copy(
-                failing_test_scripts,
-                format!("{}/01_failing_binary", &required_path),
+                failing_test_binary,
+                format!("{}/failing_binary", &wanted_path),
             )
-            .context("unable to copy failing binary to required.d")?;
-            fs::copy(
-                failing_test_scripts,
-                format!("{}/02_failing_binary", &required_path),
-            )
-            .context("unable to copy another failing binary to required.d")?;
+            .context("unable to copy failing binary to wanted.d")?;
+
+            if !passing {
+                // Create multiple failing script in required.d for failure cases
+                fs::copy(
+                    failing_test_scripts,
+                    format!("{}/01_failing_script.sh", &required_path),
+                )
+                .context("unable to copy failing script to required.d")?;
+                fs::copy(
+                    failing_test_scripts,
+                    format!("{}/02_failing_script.sh", &required_path),
+                )
+                .context("unable to copy another failing script to required.d")?;
+
+                // Create multiple failing binaries in required.d for failure cases
+                fs::copy(
+                    failing_test_scripts,
+                    format!("{}/01_failing_binary", &required_path),
+                )
+                .context("unable to copy failing binary to required.d")?;
+                fs::copy(
+                    failing_test_scripts,
+                    format!("{}/02_failing_binary", &required_path),
+                )
+                .context("unable to copy another failing binary to required.d")?;
+            }
         }
         Ok(())
     }
 
     fn tear_down() -> Result<()> {
-        fs::remove_dir_all(GREENBOOT_INSTALL_PATHS[1]).expect("Unable to delete folder");
+        for path in GREENBOOT_INSTALL_PATHS {
+            fs::remove_dir_all(path).expect("Unable to delete folder");
+        }
         Ok(())
     }
 }
