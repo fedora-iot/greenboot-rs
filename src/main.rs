@@ -135,7 +135,7 @@ fn check_previous_rollback() -> Result<bool> {
     // Check for specific success indicators
     let success = journal_output.contains("Rollback successful");
 
-    log::debug!("Rollback detection result: {}", success);
+    log::debug!("Rollback detection result: {success}");
     Ok(success)
 }
 
@@ -167,10 +167,7 @@ fn health_check() -> Result<()> {
             status
         }
         Err(e) => {
-            log::warn!(
-                "Failed to check previous rollback status: {}. Defaulting to false.",
-                e
-            );
+            log::warn!("Failed to check previous rollback status: {e}. Defaulting to false.");
             false
         }
     };
@@ -194,7 +191,7 @@ fn health_check() -> Result<()> {
                 "Greenboot healthcheck passed - status is GREEN",
                 previous_rollback,
             )?)
-            .unwrap_or_else(|e| log::error!("cannot set motd: {}", e));
+            .unwrap_or_else(|e| log::error!("cannot set motd: {e}"));
             set_boot_status(true, GRUB_PATH, MOUNT_INFO_PATH)?;
             Ok(())
         }
@@ -205,7 +202,7 @@ fn health_check() -> Result<()> {
                 "Greenboot healthcheck failed - status is RED",
                 previous_rollback,
             )?)
-            .unwrap_or_else(|e| log::error!("cannot set motd: {}", e));
+            .unwrap_or_else(|e| log::error!("cannot set motd: {e}"));
             let errors = run_red();
             if !errors.is_empty() {
                 log::error!("There is a problem with red script runner");
@@ -213,10 +210,10 @@ fn health_check() -> Result<()> {
             }
 
             set_boot_status(false, GRUB_PATH, MOUNT_INFO_PATH)
-                .unwrap_or_else(|e| log::error!("cannot set boot_status: {}", e));
+                .unwrap_or_else(|e| log::error!("cannot set boot_status: {e}"));
             set_boot_counter(config.max_reboot, GRUB_PATH, MOUNT_INFO_PATH)
-                .unwrap_or_else(|e| log::error!("cannot set boot_counter: {}", e));
-            handle_reboot(false).unwrap_or_else(|e| log::error!("cannot reboot: {}", e));
+                .unwrap_or_else(|e| log::error!("cannot set boot_counter: {e}"));
+            handle_reboot(false).unwrap_or_else(|e| log::error!("cannot reboot: {e}"));
             bail!("greenboot healthcheck failed")
         }
     }
@@ -239,7 +236,7 @@ fn trigger_rollback() -> Result<()> {
 // This function parses a string expected in bash-array format like
 // `( "item1" "item2" ... )` into a Vec<String>.
 fn parse_bash_array_string(raw_str: &str) -> Vec<String> {
-    log::debug!("Attempting to parse raw bash-array string: '{}'", raw_str);
+    log::debug!("Attempting to parse raw bash-array string: '{raw_str}'");
 
     if raw_str.starts_with('(') && raw_str.ends_with(')') {
         // Remove the outer parentheses
@@ -252,14 +249,13 @@ fn parse_bash_array_string(raw_str: &str) -> Vec<String> {
             .filter(|s| !s.is_empty())
             .collect();
 
-        log::debug!("Parsed list from bash-array string: {:?}", parsed_list);
+        log::debug!("Parsed list from bash-array string: {parsed_list:?}");
         parsed_list
     } else if !raw_str.trim().is_empty() {
         // If the string is not empty but doesn't match the expected format,
         // log a warning and return an empty list.
         log::warn!(
-            "String ('{}') is not in the expected bash-array format '( \"item1\" ... )'. Treating as empty list.",
-            raw_str
+            "String ('{raw_str}') is not in the expected bash-array format '( \"item1\" ... )'. Treating as empty list."
         );
         vec![]
     } else {

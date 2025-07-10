@@ -129,7 +129,7 @@ sudo systemctl start libvirtd
 sudo virsh list --all > /dev/null
 
 # Set a customized dnsmasq configuration for libvirt so we always get the
-# same address on bootup.
+# same address on boot up.
 greenprint "💡 Setup libvirt network"
 sudo tee /tmp/integration.xml > /dev/null << EOF
 <network xmlns:dnsmasq='http://libvirt.org/schemas/network/dnsmasq/1.0'>
@@ -320,8 +320,6 @@ version = "*"
 name = "sssd"
 version = "*"
 
-[customizations.services]
-enabled = ["greenboot-success.target"]
 
 [[customizations.user]]
 name = "${SSH_USER}"

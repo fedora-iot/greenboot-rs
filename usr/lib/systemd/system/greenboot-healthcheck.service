@@ -17,3 +17,4 @@ PrivateMounts=yes
 [Install]
 RequiredBy=boot-complete.target
 WantedBy=multi-user.target
+Also=greenboot-success.target
