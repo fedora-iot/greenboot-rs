@@ -60,14 +60,11 @@ pub fn handle_rollback() -> Result<()> {
         Some(counter) if counter <= 0 => {
             log::info!("Greenboot will now attempt to rollback to a previous deployment.");
             if let Some(deployment_cmd) = detect_os_deployment() {
-                log::info!(
-                    "Deployment manager '{}' detected, attempting rollback.",
-                    deployment_cmd
-                );
+                log::info!("Deployment manager '{deployment_cmd}' detected, attempting rollback.");
                 let status = Command::new(deployment_cmd)
                     .arg("rollback")
                     .status()
-                    .context(format!("Failed to execute '{} rollback'", deployment_cmd))?;
+                    .context(format!("Failed to execute '{deployment_cmd} rollback'"))?;
 
                 if !status.success() {
                     bail!(

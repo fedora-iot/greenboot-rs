@@ -21,9 +21,9 @@ pub fn run_diagnostics(skipped: Vec<String>) -> Result<Vec<String>> {
 
     // Run required checks
     for path in GREENBOOT_INSTALL_PATHS {
-        let greenboot_required_path = format!("{}/check/required.d/", path);
+        let greenboot_required_path = format!("{path}/check/required.d/");
         if !Path::new(&greenboot_required_path).is_dir() {
-            log::warn!("skipping test as {} is not a dir", greenboot_required_path);
+            log::warn!("skipping test as {greenboot_required_path} is not a dir");
             continue;
         }
         path_exists = true;
@@ -43,7 +43,7 @@ pub fn run_diagnostics(skipped: Vec<String>) -> Result<Vec<String>> {
 
     // Run wanted checks
     for path in GREENBOOT_INSTALL_PATHS {
-        let greenboot_wanted_path = format!("{}/check/wanted.d/", path);
+        let greenboot_wanted_path = format!("{path}/check/wanted.d/");
         let result = run_scripts("wanted", &greenboot_wanted_path, Some(&skipped));
         all_skipped.extend(result.skipped);
 
@@ -61,8 +61,7 @@ pub fn run_diagnostics(skipped: Vec<String>) -> Result<Vec<String>> {
 
     if !missing_disabled.is_empty() {
         log::warn!(
-            "The following disabled scripts were not found in any directory: {:?}",
-            missing_disabled
+            "The following disabled scripts were not found in any directory: {missing_disabled:?}"
         );
     }
 
@@ -74,7 +73,7 @@ pub fn run_red() -> Vec<Box<dyn Error>> {
     let mut errors = Vec::new();
 
     for path in GREENBOOT_INSTALL_PATHS {
-        let red_path = format!("{}/red.d/", path);
+        let red_path = format!("{path}/red.d/");
         let result = run_scripts("red", &red_path, None); // Pass None for disabled scripts
         errors.extend(result.errors);
     }
@@ -87,7 +86,7 @@ pub fn run_green() -> Vec<Box<dyn Error>> {
     let mut errors = Vec::new();
 
     for path in GREENBOOT_INSTALL_PATHS {
-        let green_path = format!("{}/green.d/", path);
+        let green_path = format!("{path}/green.d/");
         let result = run_scripts("green", &green_path, None); // Pass None for disabled scripts
         errors.extend(result.errors);
     }
@@ -106,7 +105,7 @@ fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> S
         skipped: Vec::new(),
     };
 
-    let entries = match glob(&format!("{}*", path)) {
+    let entries = match glob(&format!("{path}*")) {
         Ok(e) => {
             let valid: Vec<_> = e
                 .filter_map(Result::ok)
@@ -139,7 +138,7 @@ fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> S
         // Check if script/binary should be skipped
         if let Some(disabled) = disabled_scripts {
             if disabled.contains(&file_name.to_string()) {
-                log::info!("Skipping disabled script: {}", file_name);
+                log::info!("Skipping disabled script: {file_name}");
                 result.skipped.push(file_name.to_string());
                 continue;
             }

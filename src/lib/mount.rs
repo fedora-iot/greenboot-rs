@@ -41,18 +41,14 @@ pub fn remount_boot_ro(mounts_path: &Path) -> Result<(), MountError> {
                         Ok(())
                     } else {
                         let error_message = String::from_utf8_lossy(&output.stderr);
-                        warn!(
-                            "Failed to remount /boot as RO using shell: {}",
-                            error_message
-                        );
+                        warn!("Failed to remount /boot as RO using shell: {error_message}");
                         Err(MountError::RemountFailed(error_message.to_string()))
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to execute mount command: {}", e);
+                    warn!("Failed to execute mount command: {e}");
                     Err(MountError::RemountFailed(format!(
-                        "Failed to execute mount: {}",
-                        e
+                        "Failed to execute mount: {e}"
                     )))
                 }
             }
@@ -81,18 +77,14 @@ pub fn remount_boot_rw(mounts_path: &Path) -> Result<(), MountError> {
                         Ok(())
                     } else {
                         let error_message = String::from_utf8_lossy(&output.stderr);
-                        warn!(
-                            "Failed to remount /boot as RW using shell: {}",
-                            error_message
-                        );
+                        warn!("Failed to remount /boot as RW using shell: {error_message}");
                         Err(MountError::RemountFailed(error_message.to_string()))
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to execute mount command: {}", e);
+                    warn!("Failed to execute mount command: {e}");
                     Err(MountError::RemountFailed(format!(
-                        "Failed to execute mount: {}",
-                        e
+                        "Failed to execute mount: {e}"
                     )))
                 }
             }
