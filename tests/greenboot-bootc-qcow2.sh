@@ -38,6 +38,8 @@ case "${ID}-${VERSION_ID}" in
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
         sudo dnf install -y rpmbuild rust-packaging
+        #install thse packages due to fedora packaging guideline
+        sudo dnf install -y 'crate(anyhow/default)' 'crate(clap/default)' 'crate(clap/derive)' 'crate(config/default)' 'crate(env_logger/default)' 'crate(glob/default)' 'crate(once_cell/default)' 'crate(pretty_env_logger/default)' 'crate(serde_json/default)' 'crate(tempfile/default)' 'crate(thiserror/default)' 'crate(config/default)' 'crate(env_logger/default)' 'crate(nix/default)'
         ;;
     "centos-10")
         OS_VARIANT="centos-stream9"
