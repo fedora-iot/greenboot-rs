@@ -404,11 +404,37 @@ for _ in $(seq 0 30); do
     sleep 10
 done
 
-greenprint "🛃 Copying binary check files to edge vm"
+greenprint "🛃 Copying binary and script files to edge vm"
+
+# Create red.d and green.d directories if they don't exist
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo mkdir -p /etc/greenboot/red.d /etc/greenboot/green.d"
+
+# Copy all files to temp directory first (all at once)
 scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_binary "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
-ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo mv /tmp/failing_binary /etc/greenboot/check/wanted.d/"
 scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_binary "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
+scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_script.sh "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
+scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_script.sh "${SSH_USER}@${GUEST_ADDRESS}":/tmp/
+
+# Setup all directories using cp (copy) instead of mv (move) so files stay in /tmp/
+greenprint "🛃 Setting up red.d directory files"
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo cp /tmp/failing_binary /etc/greenboot/red.d/"
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo cp /tmp/passing_binary /etc/greenboot/red.d/"
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo cp /tmp/failing_script.sh /etc/greenboot/red.d/"
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo cp /tmp/passing_script.sh /etc/greenboot/red.d/"
+
+greenprint "🛃 Setting up green.d directory files"
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo cp /tmp/failing_binary /etc/greenboot/green.d/"
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo cp /tmp/passing_binary /etc/greenboot/green.d/"
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo cp /tmp/failing_script.sh /etc/greenboot/green.d/"
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo cp /tmp/passing_script.sh /etc/greenboot/green.d/"
+
+# Setup original check directories (keeping existing behavior)
+greenprint "🛃 Copying binary check files to edge vm"
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo mv /tmp/failing_binary /etc/greenboot/check/wanted.d/"
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo mv /tmp/passing_binary /etc/greenboot/check/required.d/"
+
+# Clean up remaining temp files
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo rm -f /tmp/failing_script.sh /tmp/passing_script.sh"
 
 # Add instance IP address into /etc/ansible/hosts
 tee "${TEMPDIR}"/inventory > /dev/null << EOF

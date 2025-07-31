@@ -187,6 +187,56 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    # case: check for red.d scripts and binaries running, both passing and failing
+    - name: check red script execution after failed boot
+      block:
+        - name: red script execution logs should be found here after failed boot
+          shell: journalctl -u greenboot-healthcheck.service
+          become: yes
+          register: result_red_scripts
+
+        - assert:
+            that:
+              - "'red script /etc/greenboot/red.d/passing_binary success!' in result_red_scripts.stdout"
+              - "'red script /etc/greenboot/red.d/failing_binary failed!' in result_red_scripts.stdout"
+              - "'red script /etc/greenboot/red.d/passing_script.sh success!' in result_red_scripts.stdout"
+              - "'red script /etc/greenboot/red.d/failing_script.sh failed!' in result_red_scripts.stdout"
+            fail_msg: "Red script execution logs not found"
+            success_msg: "Found red script execution logs"
+
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check for green.d scripts and binaries running, both passing and failing
+    - name: check green script execution after successful boot
+      block:
+        - name: green script execution logs should be found here after successful boot
+          shell: journalctl -b -0 -u greenboot -u greenboot-healthcheck
+          become: yes
+          register: result_green_scripts
+
+        - assert:
+            that:
+              - "'green script /etc/greenboot/green.d/passing_binary success!' in result_green_scripts.stdout"
+              - "'green script /etc/greenboot/green.d/failing_binary failed!' in result_green_scripts.stdout"
+              - "'green script /etc/greenboot/green.d/passing_script.sh success!' in result_green_scripts.stdout"
+              - "'green script /etc/greenboot/green.d/failing_script.sh failed!' in result_green_scripts.stdout"
+            fail_msg: "Green script and binary execution logs not found"
+            success_msg: "Found green script and binary execution logs"
+
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
     # case: check boot times
     - name: check boot times
       block:
