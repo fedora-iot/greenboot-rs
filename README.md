@@ -4,7 +4,7 @@
 
 
 # greenboot-rs
-Rust implementation of [greenboot](https://github.com/fedora-iot/greenboot) designed for [bootc](https://bootc-dev.github.io/bootc/) based systems.
+Rust implementation of [greenboot](https://github.com/fedora-iot/greenboot) designed for [bootc](https://bootc-dev.github.io/bootc/) based systems..
 
 ## Table of contents
 - [greenboot-rs](#greenboot-rs)
