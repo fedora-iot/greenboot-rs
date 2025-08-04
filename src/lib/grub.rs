@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::Command;
 use std::str;
 
-use crate::mount::{remount_boot_ro, remount_boot_rw};
+use crate::mount::{is_boot_rw, remount_boot_ro, remount_boot_rw};
 
 /// fetches boot_counter value, none if not set
 pub fn get_boot_counter(grub_path: &str) -> Result<Option<i32>> {
@@ -95,27 +95,57 @@ pub fn get_rollback_trigger(grub_path: &str) -> Result<bool> {
 }
 
 fn unset_grub_var(key: &str, grub_path: &str, mount_info_path: &str) -> Result<()> {
-    remount_boot_rw(Path::new(mount_info_path)).context("Failed to remount /boot as rw")?;
-    Command::new("grub2-editenv")
+    let was_rw = is_boot_rw(Path::new(mount_info_path))
+        .map_err(|e| anyhow::anyhow!("Failed to check boot mount state: {}", e))?;
+
+    if !was_rw {
+        remount_boot_rw(Path::new(mount_info_path)).context("Failed to remount /boot as rw")?;
+    }
+
+    // Execute GRUB command and capture result
+    let grub_result = Command::new("grub2-editenv")
         .arg(grub_path)
         .arg("unset")
         .arg(key)
         .status()
-        .context("Unable to clear boot_counter")?;
+        .context("Unable to clear boot_counter");
+
+    // Always attempt to restore mount state, regardless of GRUB command result
+    if !was_rw {
+        remount_boot_ro(Path::new(mount_info_path)).context("Failed to remount /boot as ro")?;
+    }
+
+    // Now check the GRUB command result
+    grub_result?;
     log::info!("Clear grubenv: {key}");
-    remount_boot_ro(Path::new(mount_info_path)).context("Failed to remount /boot as read-only")
+    Ok(())
 }
 
 fn set_grub_var(key: &str, val: u16, grub_path: &str, mount_info_path: &str) -> Result<()> {
-    remount_boot_rw(Path::new(mount_info_path)).context("Failed to remount /boot as rw")?;
-    Command::new("grub2-editenv")
+    let was_rw = is_boot_rw(Path::new(mount_info_path))
+        .map_err(|e| anyhow::anyhow!("Failed to check boot mount state: {}", e))?;
+
+    if !was_rw {
+        remount_boot_rw(Path::new(mount_info_path)).context("Failed to remount /boot as rw")?;
+    }
+
+    // Execute GRUB command and capture result
+    let grub_result = Command::new("grub2-editenv")
         .arg(grub_path)
         .arg("set")
         .arg(format!("{key}={val}"))
         .status()
-        .context("Unable to set grubenv")?;
+        .context("Unable to set grubenv");
+
+    // Always attempt to restore mount state, regardless of GRUB command result
+    if !was_rw {
+        remount_boot_ro(Path::new(mount_info_path))
+            .context("Failed to remount /boot as read-only")?;
+    }
+
+    grub_result?;
     log::info!("Set grubenv: {key}={val}");
-    remount_boot_ro(Path::new(mount_info_path)).context("Failed to remount /boot as read-only")
+    Ok(())
 }
 
 #[cfg(test)]

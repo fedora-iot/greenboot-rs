@@ -3,6 +3,7 @@
 use log::{info, warn};
 use std::fs;
 use std::path::Path;
+#[cfg(not(feature = "test-remount"))]
 use std::process::{Command, Stdio};
 use thiserror::Error;
 
@@ -14,7 +15,7 @@ pub enum MountError {
     MountInfoError,
 }
 
-fn is_boot_rw(mounts_path: &Path) -> Result<bool, MountError> {
+pub fn is_boot_rw(mounts_path: &Path) -> Result<bool, MountError> {
     let mounts = fs::read_to_string(mounts_path).map_err(|_| MountError::MountInfoError)?;
     for line in mounts.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
