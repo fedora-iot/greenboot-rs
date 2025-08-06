@@ -91,6 +91,7 @@ mkdir -p %{buildroot}%{_unitdir}
 mkdir -p %{buildroot}%{_tmpfilesdir}
 install -DpZm 0755 usr/lib/greenboot/check/required.d/* %{buildroot}%{_prefix}/lib/%{name}/check/required.d
 install -DpZm 0755 usr/lib/greenboot/check/wanted.d/* %{buildroot}%{_prefix}/lib/%{name}/check/wanted.d
+install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-network-online.conf %{buildroot}%{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
 %post
 %systemd_post greenboot-healthcheck.service
@@ -131,9 +132,10 @@ install -DpZm 0755 usr/lib/greenboot/check/wanted.d/* %{buildroot}%{_prefix}/lib
 %dir %{_sysconfdir}/%{name}/red.d
 
 %files default-health-checks
-%{_prefix}/lib/%{name}/check/required.d/01_repository_dns_check.sh
 %{_prefix}/lib/%{name}/check/wanted.d/01_update_platforms_check.sh
 %{_prefix}/lib/%{name}/check/required.d/02_watchdog.sh
+%{_prefix}/lib/%{name}/check/required.d/01_repository_dns_check.sh
+%{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
 %changelog
 * Thu Jul 24 2025 Sayan Paul <paul.sayan@gmail.com> - 0.16-1

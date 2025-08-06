@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, anyhow, bail};
+use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
 use std::str;
@@ -13,12 +14,11 @@ fn detect_os_deployment() -> Option<&'static str> {
         .output()
     {
         if output.status.success() {
-            let stdout_str = String::from_utf8_lossy(&output.stdout);
-            // Check for the key-value pair as a substring. This is less robust
-            // than proper JSON parsing but avoids the external dependency.
-            if stdout_str.contains(r#""type": "bootcHost""#) {
-                log::info!("System detected as bootc-managed host.");
-                return Some("bootc");
+            if let Ok(json) = serde_json::from_slice::<Value>(&output.stdout) {
+                if json.get("kind").and_then(|v| v.as_str()) == Some("BootcHost") {
+                    log::info!("System detected as bootc-managed host.");
+                    return Some("bootc");
+                }
             }
         }
     }
