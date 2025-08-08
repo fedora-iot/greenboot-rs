@@ -89,3 +89,15 @@ At the moment, it is possible to customize the following parameters via environm
     - Unsets `boot_counter` GRUB env var and sets `boot_success` GRUB env var to 1.
     - Runs the scripts in `green.d` folder, scripts that are meant to be run after a successful update.
     - Creates the MOTD with a success message.
+
+## Integration Tests
+
+To run integration tests:
+
+1. **Requirements**:
+   - Fedora Rawhide OR CentOS Stream 10
+   - Quay.io account with container registry access
+
+2. **Execution**:
+   ```bash
+   QUAY_USERNAME=<your_quay_username> QUAY_PASSWORD=<your_quay_password> make integration-test

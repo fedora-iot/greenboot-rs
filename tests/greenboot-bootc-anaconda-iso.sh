@@ -164,7 +164,6 @@ cp testing_assets/failing_binary tests/ && popd
 ###########################################################
 greenprint "Building bootc container with greenboot installed"
 podman login quay.io -u ${QUAY_USERNAME} -p ${QUAY_PASSWORD}
-podman login registry.stage.redhat.io -u ${STAGE_REDHAT_IO_USERNAME} -p ${STAGE_REDHAT_IO_TOKEN}
 tee Containerfile > /dev/null << EOF
 FROM ${BASE_IMAGE_URL}
 # Copy the local RPM files into the container
