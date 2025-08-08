@@ -1,13 +1,13 @@
 # https://packit.dev/docs/configuration/
 
-specfile_path: greenboot.spec
+specfile_path: greenboot-rs.spec
 
 files_to_sync:
-    - greenboot.spec
+    - greenboot-rs.spec
     - .packit.yaml
 
-upstream_package_name: greenboot
-downstream_package_name: greenboot
+upstream_package_name: greenboot-rs
+downstream_package_name: greenboot-rs
 
 upstream_tag_template: v{version}
 copy_upstream_release_description: true
@@ -17,14 +17,14 @@ srpm_build_deps:
 
 actions:
   get-current-version:
-  - grep -oP '^Version:\s+\K\S+' greenboot.spec
+  - grep -oP '^Version:\s+\K\S+' greenboot-rs.spec
   create-archive:
   - "cargo vendor vendor"
-  - bash -c "git archive --prefix=greenboot-${PACKIT_PROJECT_VERSION}/ --format=tar HEAD > greenboot-${PACKIT_PROJECT_VERSION}.tar"
-  - bash -c "tar -xvf greenboot-${PACKIT_PROJECT_VERSION}.tar"
-  - bash -c "tar -czf greenboot-${PACKIT_PROJECT_VERSION}.tar.gz greenboot-${PACKIT_PROJECT_VERSION}"
-  - bash -c "rm -rf greenboot-${PACKIT_PROJECT_VERSION} greenboot-${PACKIT_PROJECT_VERSION}.tar vendor"
-  - bash -c "ls -1 ./greenboot-*.tar.gz"
+  - bash -c "git archive --prefix=greenboot-rs-${PACKIT_PROJECT_VERSION}/ --format=tar HEAD > greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
+  - bash -c "tar -xvf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
+  - bash -c "tar -czf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar.gz greenboot-rs-${PACKIT_PROJECT_VERSION}"
+  - bash -c "rm -rf greenboot-rs-${PACKIT_PROJECT_VERSION} greenboot-rs-${PACKIT_PROJECT_VERSION}.tar vendor"
+  - bash -c "ls -1 ./greenboot-rs-*.tar.gz"
 
 jobs:
 - job: copr_build

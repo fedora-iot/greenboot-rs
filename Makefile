@@ -3,8 +3,8 @@ TARGETDIR ?= target
 SRCDIR ?= .
 COMMIT = $(shell (cd "$(SRCDIR)" && git rev-parse HEAD))
 
-RPM_SPECFILE=rpmbuild/SPECS/greenboot-$(COMMIT).spec
-RPM_TARBALL=rpmbuild/SOURCES/greenboot-$(COMMIT).tar.gz
+RPM_SPECFILE=rpmbuild/SPECS/greenboot-rs-$(COMMIT).spec
+RPM_TARBALL=rpmbuild/SOURCES/greenboot-rs-$(COMMIT).tar.gz
 
 ifeq ($(RELEASE),1)
 	PROFILE ?= release
@@ -19,11 +19,11 @@ all: build check
 
 $(RPM_SPECFILE):
 	mkdir -p $(CURDIR)/rpmbuild/SPECS
-	(echo "%global commit $(COMMIT)"; git show HEAD:greenboot.spec) > $(RPM_SPECFILE)
+	(echo "%global commit $(COMMIT)"; git show HEAD:greenboot-rs.spec) > $(RPM_SPECFILE)
 
 $(RPM_TARBALL):
 	mkdir -p $(CURDIR)/rpmbuild/SOURCES
-	git archive --prefix=greenboot-$(COMMIT)/ --format=tar.gz HEAD > $(RPM_TARBALL)
+	git archive --prefix=greenboot-rs-$(COMMIT)/ --format=tar.gz HEAD > $(RPM_TARBALL)
 
 .PHONY: build
 build:

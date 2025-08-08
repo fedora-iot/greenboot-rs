@@ -2,13 +2,14 @@
 %bcond_without check
 %global __cargo_skip_build 0
 %global __cargo_is_lib() false
-%global forgeurl https://github.com/fedora-iot/greenboot
+%global forgeurl https://github.com/fedora-iot/greenboot-rs
+%global pkgname greenboot
 
 Version:            0.16.0
 
 %forgemeta
 
-Name:               greenboot
+Name:               greenboot-rs
 Release:            0%{?dist}
 Summary:            Generic Health Check Framework for systemd
 License:            LGPLv2+
@@ -50,15 +51,30 @@ Requires:           pam >= 1.4.0
 Recommends:         openssh
 
 %description
+This is the source package for the Rust implementation of greenboot.
+
+%package -n %{pkgname}
+Summary:            %{summary}
+# this replaces the bash version of greenboot
+Provides:       %{pkgname} = %{version}-%{release}
+Obsoletes:      %{pkgname} < %{version}-%{release}
+Conflicts:      %{pkgname} < %{version}-%{release}
+Requires:       systemd >= 240
+Requires:       rpm-ostree
+Requires:       pam >= 1.4.0
+Recommends:     openssh
+
+%description -n %{pkgname}
+
 %{summary}.
 
-%package default-health-checks
+%package -n %{pkgname}-default-health-checks
 Summary:            Series of optional and curated health checks
-Requires:           %{name} = %{version}-%{release}
+Requires:           %{pkgname} = %{version}-%{release}
 Requires:           util-linux
 Requires:           jq
 
-%description default-health-checks
+%description -n %{pkgname}-default-health-checks
 %{summary}.
 
 %prep
@@ -71,26 +87,26 @@ Requires:           jq
 %install
 %cargo_install
 mkdir -p %{buildroot}%{_libexecdir}
-mkdir -p %{buildroot}%{_libexecdir}/%{name}
-mv %{buildroot}%{_bindir}/greenboot %{buildroot}%{_libexecdir}/%{name}/%{name}
+mkdir -p %{buildroot}%{_libexecdir}/%{pkgname}
+mv %{buildroot}%{_bindir}/greenboot %{buildroot}%{_libexecdir}/%{pkgname}/%{pkgname}
 install -Dpm0644 -t %{buildroot}%{_unitdir} usr/lib/systemd/system/*.service
 install -Dpm0644 -t %{buildroot}%{_unitdir} usr/lib/systemd/system/*.target
 mkdir -p %{buildroot}%{_exec_prefix}/lib/motd.d/
-mkdir -p %{buildroot}%{_libexecdir}/%{name}
-install -Dpm0644 -t %{buildroot}%{_sysconfdir}/%{name} etc/greenboot/greenboot.conf
+mkdir -p %{buildroot}%{_libexecdir}/%{pkgname}
+install -Dpm0644 -t %{buildroot}%{_sysconfdir}/%{pkgname} etc/greenboot/greenboot.conf
 install -D -t %{buildroot}%{_prefix}/lib/bootupd/grub2-static/configs.d grub2/08_greenboot.cfg
-mkdir -p %{buildroot}%{_sysconfdir}/%{name}/check/required.d
-mkdir    %{buildroot}%{_sysconfdir}/%{name}/check/wanted.d
-mkdir    %{buildroot}%{_sysconfdir}/%{name}/green.d
-mkdir    %{buildroot}%{_sysconfdir}/%{name}/red.d
-mkdir -p %{buildroot}%{_prefix}/lib/%{name}/check/required.d
-mkdir    %{buildroot}%{_prefix}/lib/%{name}/check/wanted.d
-mkdir    %{buildroot}%{_prefix}/lib/%{name}/green.d
-mkdir    %{buildroot}%{_prefix}/lib/%{name}/red.d
+mkdir -p %{buildroot}%{_sysconfdir}/%{pkgname}/check/required.d
+mkdir    %{buildroot}%{_sysconfdir}/%{pkgname}/check/wanted.d
+mkdir    %{buildroot}%{_sysconfdir}/%{pkgname}/green.d
+mkdir    %{buildroot}%{_sysconfdir}/%{pkgname}/red.d
+mkdir -p %{buildroot}%{_prefix}/lib/%{pkgname}/check/required.d
+mkdir    %{buildroot}%{_prefix}/lib/%{pkgname}/check/wanted.d
+mkdir    %{buildroot}%{_prefix}/lib/%{pkgname}/green.d
+mkdir    %{buildroot}%{_prefix}/lib/%{pkgname}/red.d
 mkdir -p %{buildroot}%{_unitdir}
 mkdir -p %{buildroot}%{_tmpfilesdir}
-install -DpZm 0755 usr/lib/greenboot/check/required.d/* %{buildroot}%{_prefix}/lib/%{name}/check/required.d
-install -DpZm 0755 usr/lib/greenboot/check/wanted.d/* %{buildroot}%{_prefix}/lib/%{name}/check/wanted.d
+install -DpZm 0755 usr/lib/greenboot/check/required.d/* %{buildroot}%{_prefix}/lib/%{pkgname}/check/required.d
+install -DpZm 0755 usr/lib/greenboot/check/wanted.d/* %{buildroot}%{_prefix}/lib/%{pkgname}/check/wanted.d
 install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-network-online.conf %{buildroot}%{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
 %post
@@ -108,36 +124,40 @@ install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-net
 %systemd_postun greenboot-set-rollback-trigger.service
 %systemd_postun greenboot-success.target
 
-%files
+%files -n %{pkgname}
 %doc README.md
 %license LICENSE
-%dir %{_libexecdir}/%{name}
-%{_libexecdir}/%{name}/%{name}
+%dir %{_libexecdir}/%{pkgname}
+%{_libexecdir}/%{pkgname}/%{pkgname}
 %{_unitdir}/greenboot-healthcheck.service
 %{_unitdir}/greenboot-set-rollback-trigger.service
 %{_unitdir}/greenboot-success.target
-%{_sysconfdir}/%{name}/greenboot.conf
+%{_sysconfdir}/%{pkgname}/greenboot.conf
 %{_prefix}/lib/bootupd/grub2-static/configs.d/08_greenboot.cfg
-%dir %{_prefix}/lib/%{name}
-%dir %{_prefix}/lib/%{name}/check
-%dir %{_prefix}/lib/%{name}/check/required.d
-%dir %{_prefix}/lib/%{name}/check/wanted.d
-%dir %{_prefix}/lib/%{name}/green.d
-%dir %{_prefix}/lib/%{name}/red.d
-%dir %{_sysconfdir}/%{name}
-%dir %{_sysconfdir}/%{name}/check
-%dir %{_sysconfdir}/%{name}/check/required.d
-%dir %{_sysconfdir}/%{name}/check/wanted.d
-%dir %{_sysconfdir}/%{name}/green.d
-%dir %{_sysconfdir}/%{name}/red.d
+%dir %{_prefix}/lib/%{pkgname}
+%dir %{_prefix}/lib/%{pkgname}/check
+%dir %{_prefix}/lib/%{pkgname}/check/required.d
+%dir %{_prefix}/lib/%{pkgname}/check/wanted.d
+%dir %{_prefix}/lib/%{pkgname}/green.d
+%dir %{_prefix}/lib/%{pkgname}/red.d
+%dir %{_sysconfdir}/%{pkgname}
+%dir %{_sysconfdir}/%{pkgname}/check
+%dir %{_sysconfdir}/%{pkgname}/check/required.d
+%dir %{_sysconfdir}/%{pkgname}/check/wanted.d
+%dir %{_sysconfdir}/%{pkgname}/green.d
+%dir %{_sysconfdir}/%{pkgname}/red.d
 
-%files default-health-checks
-%{_prefix}/lib/%{name}/check/wanted.d/01_update_platforms_check.sh
-%{_prefix}/lib/%{name}/check/required.d/02_watchdog.sh
-%{_prefix}/lib/%{name}/check/required.d/01_repository_dns_check.sh
+%files -n %{pkgname}-default-health-checks
+%{_prefix}/lib/%{pkgname}/check/wanted.d/01_update_platforms_check.sh
+%{_prefix}/lib/%{pkgname}/check/required.d/02_watchdog.sh
+%{_prefix}/lib/%{pkgname}/check/required.d/01_repository_dns_check.sh
 %{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
 %changelog
-* Thu Jul 24 2025 Sayan Paul <paul.sayan@gmail.com> - 0.16-1
+* Fri Jul 25 2025 Paul Whalen <pwhalen@fedoraproject.org> - 0.16.0-2
+- Update src to greenboot-rs, binaries remain greenboot
+- Obsoletes/Conflicts for bash greenboot, Provides greenboot
+
+* Thu Jul 24 2025 Sayan Paul <paul.sayan@gmail.com> - 0.16.0-1
 - Initial Package
 - Switched to native Fedora dependencies, removing vendoring.
