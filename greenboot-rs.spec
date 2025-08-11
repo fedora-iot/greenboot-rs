@@ -44,6 +44,7 @@ BuildRequires: rust-nix-devel
 
 %{?systemd_requires}
 Requires:           systemd >= 240
+Requires:           bootupd
 Requires:           rpm-ostree
 # PAM is required to programmatically read motd messages from /etc/motd.d/*
 # This causes issues with RHEL-8 as the fix isn't there an el8 is on pam-1.3.x
