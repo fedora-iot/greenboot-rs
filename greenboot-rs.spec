@@ -27,21 +27,6 @@ BuildRequires:  rust-packaging
 %endif
 BuildRequires:      systemd-rpm-macros
 
-# greenboot dependencies
-BuildRequires: rust-anyhow-devel
-BuildRequires: rust-clap+default-devel
-BuildRequires: rust-clap_derive-devel
-BuildRequires: rust-config-devel
-BuildRequires: rust-env_logger-devel
-BuildRequires: rust-glob-devel
-BuildRequires: rust-once_cell-devel
-BuildRequires: rust-pretty_env_logger-devel
-BuildRequires: rust-serde_json-devel
-BuildRequires: rust-tempfile+default-devel
-BuildRequires: rust-thiserror-devel
-BuildRequires: rust-config+default-devel
-BuildRequires: rust-nix-devel
-
 %{?systemd_requires}
 Requires:           systemd >= 240
 Requires:           bootupd
@@ -82,6 +67,9 @@ Requires:           jq
 %prep
 %forgeautosetup
 %cargo_prep
+
+%generate_buildrequires
+%cargo_generate_buildrequires -a
 
 %build
 %cargo_build
