@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use config::{Config, File, FileFormat};

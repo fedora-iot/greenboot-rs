@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
 use std::path::Path;

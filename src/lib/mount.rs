@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+
 use log::{info, warn};
 use std::fs;
 use std::path::Path;

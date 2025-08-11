@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+
 pub mod greenboot;
 pub mod grub;
 pub mod handler;

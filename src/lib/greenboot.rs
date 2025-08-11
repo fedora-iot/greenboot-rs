@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+
 use anyhow::{Result, bail};
 use glob::glob;
 use std::collections::HashSet;
