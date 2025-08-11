@@ -149,6 +149,7 @@ install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-net
 %dir %{_sysconfdir}/%{pkgname}/red.d
 
 %files -n %{pkgname}-default-health-checks
+%dir %{_unitdir}/greenboot-healthcheck.service.d
 %{_prefix}/lib/%{pkgname}/check/wanted.d/01_update_platforms_check.sh
 %{_prefix}/lib/%{pkgname}/check/required.d/02_watchdog.sh
 %{_prefix}/lib/%{pkgname}/check/required.d/01_repository_dns_check.sh
