@@ -7,16 +7,11 @@ License:            BSD-3-Clause
 %bcond_without check
 %global __cargo_skip_build 0
 %global __cargo_is_lib() false
-%global forgeurl https://github.com/fedora-iot/greenboot-rs
 %global pkgname greenboot
 
-Version:            0.16.0
-Release:            2%{?dist}
 
-%forgemeta
-
-URL:               %{forgeurl}
-Source0:           %{forgesource}
+URL:                https://github.com/fedora-iot/greenboot-rs
+Source0:            %{name}-%{version}.tar.gz
 
 ExcludeArch:    s390x i686 %{power64}
 
@@ -65,7 +60,7 @@ Requires:           jq
 %{summary}.
 
 %prep
-%forgeautosetup
+%autosetup -n %{name}-%{version}
 %cargo_prep
 
 %generate_buildrequires
@@ -149,6 +144,6 @@ install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-net
 - Update src to greenboot-rs, binaries remain greenboot
 - Obsoletes/Conflicts for bash greenboot, Provides greenboot
 
-* Thu Jul 24 2025 Sayan Paul <paul.sayan@gmail.com> - 0.16.0-1
+* Thu Jul 24 2025 Sayan Paul <saypaul@redhat.com> - 0.16.0-1
 - Initial Package
 - Switched to native Fedora dependencies, removing vendoring.

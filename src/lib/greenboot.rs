@@ -138,12 +138,12 @@ fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> S
         };
 
         // Check if script/binary should be skipped
-        if let Some(disabled) = disabled_scripts {
-            if disabled.contains(&file_name.to_string()) {
-                log::info!("Skipping disabled script: {file_name}");
-                result.skipped.push(file_name.to_string());
-                continue;
-            }
+        if let Some(disabled) = disabled_scripts
+            && disabled.contains(&file_name.to_string())
+        {
+            log::info!("Skipping disabled script: {file_name}");
+            result.skipped.push(file_name.to_string());
+            continue;
         }
 
         log::info!("running {} check {}", name, entry.to_string_lossy());

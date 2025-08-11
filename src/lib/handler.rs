@@ -14,15 +14,12 @@ fn detect_os_deployment() -> Option<&'static str> {
     if let Ok(output) = Command::new("bootc")
         .args(["status", "--booted", "--json"])
         .output()
+        && output.status.success()
+        && let Ok(json) = serde_json::from_slice::<Value>(&output.stdout)
+        && json.get("kind").and_then(|v| v.as_str()) == Some("BootcHost")
     {
-        if output.status.success() {
-            if let Ok(json) = serde_json::from_slice::<Value>(&output.stdout) {
-                if json.get("kind").and_then(|v| v.as_str()) == Some("BootcHost") {
-                    log::info!("System detected as bootc-managed host.");
-                    return Some("bootc");
-                }
-            }
-        }
+        log::info!("System detected as bootc-managed host.");
+        return Some("bootc");
     }
 
     // 2. If not bootc, check if it's an ostree-based OS by looking for /run/ostree-booted.

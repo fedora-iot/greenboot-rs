@@ -11,6 +11,10 @@ downstream_package_name: greenboot-rs
 
 upstream_tag_template: v{version}
 copy_upstream_release_description: true
+sync_changelog: true
+
+# Use clean release string without commit hashes/branch names
+release_suffix: ""
 
 srpm_build_deps:
   - cargo
@@ -20,11 +24,21 @@ actions:
   - grep -oP '^Version:\s+\K\S+' greenboot-rs.spec
   create-archive:
   - "cargo vendor vendor"
+  # Create archive with version for spec compatibility
   - bash -c "git archive --prefix=greenboot-rs-${PACKIT_PROJECT_VERSION}/ --format=tar HEAD > greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
   - bash -c "tar -xvf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
   - bash -c "tar -czf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar.gz greenboot-rs-${PACKIT_PROJECT_VERSION}"
   - bash -c "rm -rf greenboot-rs-${PACKIT_PROJECT_VERSION} greenboot-rs-${PACKIT_PROJECT_VERSION}.tar vendor"
   - bash -c "ls -1 ./greenboot-rs-*.tar.gz"
+  post-upstream-clone:
+  - "sed -i '/^%global forgeurl/d' greenboot-rs.spec"
+  - "sed -i '/^%forgemeta/d' greenboot-rs.spec"
+  - "sed -i '/^%forgeautosetup/d' greenboot-rs.spec"
+  - bash -c "git config user.name 'Packit Build' || true"
+  - bash -c "git config user.email 'packit@fedoraproject.org' || true"
+  fix-spec-file:
+  # This runs after Packit's release processing - disable debug package to prevent saypaul error
+  - "sed -i '/^License:/a\\%global debug_package %{nil}' greenboot-rs.spec"
 
 jobs:
 - job: copr_build
