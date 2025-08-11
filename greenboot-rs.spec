@@ -6,6 +6,7 @@
 %global pkgname greenboot
 
 Version:            0.16.0
+Release:            2%{?dist}
 
 %forgemeta
 
