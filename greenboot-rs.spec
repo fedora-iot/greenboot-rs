@@ -1,4 +1,9 @@
-%global debug_package %{nil}
+Name:               greenboot-rs
+Version:            0.16.0
+Release:            2%{?dist}
+Summary:            Generic Health Check Framework for systemd
+License:            BSD-3-Clause
+
 %bcond_without check
 %global __cargo_skip_build 0
 %global __cargo_is_lib() false
@@ -9,11 +14,6 @@ Version:            0.16.0
 Release:            2%{?dist}
 
 %forgemeta
-
-Name:               greenboot-rs
-Release:            2%{?dist}
-Summary:            Generic Health Check Framework for systemd
-License:            BSD-3-Clause
 
 URL:               %{forgeurl}
 Source0:           %{forgesource}
