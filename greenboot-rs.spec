@@ -134,7 +134,7 @@ install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-net
 %{_unitdir}/greenboot-healthcheck.service
 %{_unitdir}/greenboot-set-rollback-trigger.service
 %{_unitdir}/greenboot-success.target
-%{_sysconfdir}/%{pkgname}/greenboot.conf
+%config(noreplace) %{_sysconfdir}/%{pkgname}/greenboot.conf
 %{_prefix}/lib/bootupd/grub2-static/configs.d/08_greenboot.cfg
 %dir %{_prefix}/lib/%{pkgname}
 %dir %{_prefix}/lib/%{pkgname}/check
