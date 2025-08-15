@@ -90,17 +90,17 @@ install -DpZm 0755 usr/lib/greenboot/check/required.d/* %{buildroot}%{_prefix}/l
 install -DpZm 0755 usr/lib/greenboot/check/wanted.d/* %{buildroot}%{_prefix}/lib/%{pkgname}/check/wanted.d
 install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-network-online.conf %{buildroot}%{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
-%post
+%post -n %{pkgname}
 %systemd_post greenboot-healthcheck.service
 %systemd_post greenboot-set-rollback-trigger.service
 %systemd_post greenboot-success.target
 
-%preun
+%preun -n %{pkgname}
 %systemd_preun greenboot-healthcheck.service
 %systemd_preun greenboot-set-rollback-trigger.service
 %systemd_preun greenboot-success.target
 
-%postun
+%postun -n %{pkgname}
 %systemd_postun greenboot-healthcheck.service
 %systemd_postun greenboot-set-rollback-trigger.service
 %systemd_postun greenboot-success.target
