@@ -24,7 +24,10 @@ BuildRequires:      systemd-rpm-macros
 
 
 %description
-This is the source package for the Rust implementation of greenboot.
+Greenboot is a generic health check framework for systemd allowing
+the use of healthchecks to check the state of the system post
+upgrade to ensure the system is in a known-good state and to allow
+automated rollback actions if it's not.
 
 %package -n %{pkgname}
 Summary:            %{summary}
@@ -41,7 +44,7 @@ Recommends:     openssh
 
 %description -n %{pkgname}
 
-%{summary}.
+%{description}.
 
 %package -n %{pkgname}-default-health-checks
 Summary:            Series of optional and curated health checks
@@ -50,7 +53,9 @@ Requires:           util-linux
 Requires:           jq
 
 %description -n %{pkgname}-default-health-checks
-%{summary}.
+%{description}.
+
+This package adds some default healthchecks for greenboot.
 
 %prep
 %autosetup -n %{name}-%{version}
