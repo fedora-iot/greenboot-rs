@@ -1,26 +1,24 @@
-Name:               greenboot-rs
-Version:            0.16.0
-Release:            2%{?dist}
-Summary:            Generic Health Check Framework for systemd
-License:            BSD-3-Clause
-
 %bcond_without check
 %global __cargo_skip_build 0
 %global __cargo_is_lib() false
 %global pkgname greenboot
 
+Name:		greenboot-rs
+Version:	0.16.0
+Release:	2%{?dist}
+Summary:	Generic Health Check Framework for systemd
+License:	BSD-3-Clause
+URL:		https://github.com/fedora-iot/greenboot-rs
+Source0:	%{name}-%{version}.tar.gz
 
-URL:                https://github.com/fedora-iot/greenboot-rs
-Source0:            %{name}-%{version}.tar.gz
-
-ExcludeArch:    s390x i686 %{power64}
+ExcludeArch:	s390x i686 %{power64}
 
 %if 0%{?centos} && !0%{?eln}
-BuildRequires:  rust-toolset
+BuildRequires:	rust-toolset
 %else
-BuildRequires:  rust-packaging
+BuildRequires:	rust-packaging
 %endif
-BuildRequires:      systemd-rpm-macros
+BuildRequires:	systemd-rpm-macros
 
 
 %description
@@ -30,27 +28,27 @@ upgrade to ensure the system is in a known-good state and to allow
 automated rollback actions if it's not.
 
 %package -n %{pkgname}
-Summary:            %{summary}
+Summary:	%{summary}
 # this replaces the bash version of greenboot
-Provides:       %{pkgname} = %{version}-%{release}
-Obsoletes:      %{pkgname} < %{version}-%{release}
-Conflicts:      %{pkgname} < %{version}-%{release}
+Provides:	%{pkgname} = %{version}-%{release}
+Obsoletes:	%{pkgname} < %{version}-%{release}
+Conflicts:	%{pkgname} < %{version}-%{release}
 %{?systemd_requires}
-Requires:       systemd >= 240
-Requires:       rpm-ostree
-Requires:       bootupd
-Requires:       pam >= 1.4.0
-Recommends:     openssh
+Requires:	systemd >= 240
+Requires:	rpm-ostree
+Requires:	bootupd
+Requires:	pam >= 1.4.0
+Recommends:	openssh
 
 %description -n %{pkgname}
 
 %{description}.
 
 %package -n %{pkgname}-default-health-checks
-Summary:            Series of optional and curated health checks
-Requires:           %{pkgname} = %{version}-%{release}
-Requires:           util-linux
-Requires:           jq
+Summary:	Series of optional and curated health checks
+Requires:	%{pkgname} = %{version}-%{release}
+Requires:	util-linux
+Requires:	jq
 
 %description -n %{pkgname}-default-health-checks
 %{description}.
