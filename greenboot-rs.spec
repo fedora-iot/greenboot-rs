@@ -22,15 +22,6 @@ BuildRequires:  rust-packaging
 %endif
 BuildRequires:      systemd-rpm-macros
 
-%{?systemd_requires}
-Requires:           systemd >= 240
-Requires:           bootupd
-Requires:           rpm-ostree
-# PAM is required to programmatically read motd messages from /etc/motd.d/*
-# This causes issues with RHEL-8 as the fix isn't there an el8 is on pam-1.3.x
-Requires:           pam >= 1.4.0
-# While not strictly necessary to generate the motd, the main use-case of this package is to display it on SSH login
-Recommends:         openssh
 
 %description
 This is the source package for the Rust implementation of greenboot.
@@ -41,8 +32,10 @@ Summary:            %{summary}
 Provides:       %{pkgname} = %{version}-%{release}
 Obsoletes:      %{pkgname} < %{version}-%{release}
 Conflicts:      %{pkgname} < %{version}-%{release}
+%{?systemd_requires}
 Requires:       systemd >= 240
 Requires:       rpm-ostree
+Requires:       bootupd
 Requires:       pam >= 1.4.0
 Recommends:     openssh
 
