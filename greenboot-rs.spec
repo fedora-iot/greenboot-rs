@@ -1,11 +1,9 @@
-%bcond_without check
-%global __cargo_skip_build 0
 %global __cargo_is_lib() false
 %global pkgname greenboot
 
 Name:		greenboot-rs
 Version:	0.16.0
-Release:	2%{?dist}
+Release:	3%{?dist}
 Summary:	Generic Health Check Framework for systemd
 License:	BSD-3-Clause
 URL:		https://github.com/fedora-iot/greenboot-rs
@@ -136,6 +134,9 @@ install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-net
 %{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
 %changelog
+* Fri Aug 15 2025 Peter Robinson <pbrobinson@fedoraproject.org> - 0.16.0-3
+- Various spec file cleanups
+
 * Fri Jul 25 2025 Paul Whalen <pwhalen@fedoraproject.org> - 0.16.0-2
 - Update src to greenboot-rs, binaries remain greenboot
 - Obsoletes/Conflicts for bash greenboot, Provides greenboot
