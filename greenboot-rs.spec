@@ -5,7 +5,7 @@ Name:		greenboot-rs
 Version:	0.16.0
 Release:	3%{?dist}
 Summary:	Generic Health Check Framework for systemd
-License:	BSD-3-Clause
+License:	(Apache-2.0 OR MIT) AND BSD-3-Clause
 URL:		https://github.com/fedora-iot/greenboot-rs
 Source0:	%{url}/releases/download/%{version}/%{name}-%{version}.tar.gz
 
@@ -44,6 +44,7 @@ Recommends:	openssh
 
 %package -n %{pkgname}-default-health-checks
 Summary:	Series of optional and curated health checks
+License:	BSD-3-Clause
 Requires:	%{pkgname} = %{version}-%{release}
 Requires:	util-linux
 Requires:	jq
@@ -62,6 +63,8 @@ This package adds some default healthchecks for greenboot.
 
 %build
 %cargo_build
+%{cargo_license_summary}
+%{cargo_license} > LICENSE.dependencies
 
 %install
 %cargo_install
@@ -104,8 +107,8 @@ install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-net
 %systemd_postun greenboot-success.target
 
 %files -n %{pkgname}
+%license LICENSE LICENSE.dependencies
 %doc README.md
-%license LICENSE
 %dir %{_libexecdir}/%{pkgname}
 %{_libexecdir}/%{pkgname}/%{pkgname}
 %{_unitdir}/greenboot-healthcheck.service
