@@ -7,7 +7,7 @@ Release:	3%{?dist}
 Summary:	Generic Health Check Framework for systemd
 License:	BSD-3-Clause
 URL:		https://github.com/fedora-iot/greenboot-rs
-Source0:	%{name}-%{version}.tar.gz
+Source0:	%{url}/releases/download/%{version}/%{name}-%{version}.tar.gz
 
 ExcludeArch:	s390x i686 %{power64}
 
