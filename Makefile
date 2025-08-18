@@ -1,13 +1,16 @@
 RELEASE ?= 0
 TARGETDIR ?= target
 SRCDIR ?= .
+VENDOR ?= false
 VERSION = $(shell grep -oP '^Version:\s+\K\S+' greenboot-rs.spec)
 COMMIT = $(shell (cd "$(SRCDIR)" && git rev-parse --short HEAD))
 TIMESTAMP = $(shell date +%Y%m%d%H%M%S)
+PLATFORMS = $(shell (echo {x86_64,aarch64,powerpc64le,s390x}-unknown-linux-gnu))
 
 # Create unique filenames with version+commit for build isolation
 RPM_SPECFILE=rpmbuild/SPECS/greenboot-rs-$(VERSION)-$(COMMIT).spec
 RPM_TARBALL=rpmbuild/SOURCES/greenboot-rs-$(VERSION).tar.gz
+VENDOR_TARBALL=greenboot-rs-$(VERSION)-vendor-patched.tar.xz
 
 ifeq ($(RELEASE),1)
 	PROFILE ?= release
@@ -25,10 +28,34 @@ $(RPM_SPECFILE):
 	# Copy spec file as-is, no modifications - let the existing release string be used
 	cp greenboot-rs.spec $(RPM_SPECFILE)
 
-$(RPM_TARBALL):
+$(VENDOR_TARBALL): vendor
+	tar cJf $(VENDOR_TARBALL) vendor; \
+	rm -rf .cargo vendor; \
+
+.PHONY: vendor-tarball
+vendor-tarball: $(VENDOR_TARBALL)
+
+.PHONY: vendor
+vendor:
+	vendor_filterer_cmd=$$(command -v cargo-vendor-filterer||:) \
+	[ -z "$$vendor_filterer_cmd" ] || rm -f $${vendor_filterer_cmd}; \
+	cargo install --quiet cargo-vendor-filterer@0.5.16; \
+	for platform in $(PLATFORMS); do  \
+		args+="--platform $${platform} "; \
+	done; \
+	# https://issues.redhat.com/browse/RHEL-65521 \
+	args+="--exclude-crate-path idna#tests "; \
+	rm -rf vendor; \
+	mkdir -p .cargo; \
+	cargo vendor-filterer $${args} > ./.cargo/config.toml; \
+
+RPM_VENDOR_TARBALL=rpmbuild/SOURCES/greenboot-rs-$(VERSION)-vendor-patched.tar.xz
+
+$(RPM_TARBALL): $(VENDOR_TARBALL)
 	mkdir -p $(CURDIR)/rpmbuild/SOURCES
 	# Create tarball with directory name matching spec file expectations: greenboot-rs-<version>/
 	git archive --prefix=greenboot-rs-$(VERSION)/ --format=tar.gz HEAD > $(RPM_TARBALL)
+	mv $(VENDOR_TARBALL) $(RPM_VENDOR_TARBALL);
 
 .PHONY: build
 build:
@@ -52,6 +79,7 @@ srpm: $(RPM_SPECFILE) $(RPM_TARBALL)
 
 .PHONY: rpm
 rpm: $(RPM_SPECFILE) $(RPM_TARBALL)
+	sudo dnf builddep -y $(RPM_SPECFILE)
 	rpmbuild -bb $(RPM_SPECFILE) \
 		--define "_topdir $(CURDIR)/rpmbuild" \
 		--define "_sourcedir $(CURDIR)/rpmbuild/SOURCES" \

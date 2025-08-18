@@ -25,6 +25,7 @@ actions:
   create-archive:
   - "cargo vendor vendor"
   # Create archive with version for spec compatibility
+  - bash -c "tar -cJf greenboot-rs-${PACKIT_PROJECT_VERSION}-vendor-patched.tar.xz vendor"
   - bash -c "git archive --prefix=greenboot-rs-${PACKIT_PROJECT_VERSION}/ --format=tar HEAD > greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
   - bash -c "tar -xvf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
   - bash -c "tar -czf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar.gz greenboot-rs-${PACKIT_PROJECT_VERSION}"
