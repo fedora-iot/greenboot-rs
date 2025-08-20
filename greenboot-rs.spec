@@ -8,6 +8,7 @@ Summary:	Generic Health Check Framework for systemd
 License:	(Apache-2.0 OR MIT) AND BSD-3-Clause
 URL:		https://github.com/fedora-iot/greenboot-rs
 Source0:	%{url}/releases/download/%{version}/%{name}-%{version}.tar.gz
+Source1:	%{name}-%{version}-vendor-patched.tar.xz
 
 ExcludeArch:	s390x i686 %{power64}
 
@@ -55,16 +56,24 @@ Requires:	jq
 This package adds some default healthchecks for greenboot.
 
 %prep
+%if 0%{?centos} && !0%{?eln}
+%autosetup -p1 -a1 -n %{name}-%{version}
+%cargo_prep -v vendor
+%else
 %autosetup -n %{name}-%{version}
 %cargo_prep
-
 %generate_buildrequires
 %cargo_generate_buildrequires -a
+%endif
 
 %build
 %cargo_build
 %{cargo_license_summary}
 %{cargo_license} > LICENSE.dependencies
+
+%if 0%{?centos}
+%cargo_vendor_manifest
+%endif
 
 %install
 %cargo_install
@@ -137,6 +146,9 @@ install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-net
 %{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
 %changelog
+* Wed Aug 20 2025 Mario Cattamo <mcattamo@redhat.com> - 0.16.0-4
+- Handle vendor packages in Centos-Stream
+
 * Fri Aug 15 2025 Peter Robinson <pbrobinson@fedoraproject.org> - 0.16.0-3
 - Various spec file cleanups
 
