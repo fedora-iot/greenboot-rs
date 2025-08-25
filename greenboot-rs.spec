@@ -1,9 +1,10 @@
-%global __cargo_is_lib() false
+%bcond_with check
+%global cargo_install_lib 0
 %global pkgname greenboot
 
 Name:		greenboot-rs
 Version:	0.16.0
-Release:	3%{?dist}
+Release:	4%{?dist}
 Summary:	Generic Health Check Framework for systemd
 License:	(Apache-2.0 OR MIT) AND BSD-3-Clause
 URL:		https://github.com/fedora-iot/greenboot-rs
@@ -11,11 +12,7 @@ Source0:	%{url}/releases/download/%{version}/%{name}-%{version}.tar.gz
 
 ExcludeArch:	s390x i686 %{power64}
 
-%if 0%{?centos} && !0%{?eln}
-BuildRequires:	rust-toolset
-%else
-BuildRequires:	rust-packaging
-%endif
+BuildRequires:	cargo-rpm-macros
 BuildRequires:	systemd-rpm-macros
 
 
@@ -59,12 +56,15 @@ This package adds some default healthchecks for greenboot.
 %cargo_prep
 
 %generate_buildrequires
-%cargo_generate_buildrequires -a
+%cargo_generate_buildrequires
 
 %build
 %cargo_build
 %{cargo_license_summary}
 %{cargo_license} > LICENSE.dependencies
+
+%check
+%cargo_test -f test-remount "--" "--test-threads=1"
 
 %install
 %cargo_install
@@ -137,6 +137,9 @@ install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-net
 %{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
 %changelog
+* Mon Aug 25 2025 Sayan Paul <saypaul@redhat.com> - 0.16.0-4
+- Adding rust packaging best practices
+
 * Fri Aug 15 2025 Peter Robinson <pbrobinson@fedoraproject.org> - 0.16.0-3
 - Various spec file cleanups
 
