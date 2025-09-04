@@ -1,4 +1,4 @@
-
+Test CI
 
 [![Continuous integration](https://github.com/fedora-iot/greenboot-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/fedora-iot/greenboot-rs/actions/workflows/ci.yml)
 
