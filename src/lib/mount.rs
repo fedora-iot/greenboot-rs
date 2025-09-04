@@ -7,6 +7,9 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use thiserror::Error;
 
+/// Shared path to mount info used by default helpers
+static MOUNT_INFO_PATH: &str = "/proc/mounts";
+
 #[derive(Debug, Error)]
 pub enum MountError {
     #[error("Failed to remount /boot: {0}")]
@@ -15,7 +18,7 @@ pub enum MountError {
     MountInfoError,
 }
 
-pub fn is_boot_rw(mounts_path: &Path) -> Result<bool, MountError> {
+fn is_boot_rw_at(mounts_path: &Path) -> Result<bool, MountError> {
     let mounts = fs::read_to_string(mounts_path).map_err(|_| MountError::MountInfoError)?;
     for line in mounts.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -27,9 +30,14 @@ pub fn is_boot_rw(mounts_path: &Path) -> Result<bool, MountError> {
     Err(MountError::MountInfoError)
 }
 
+/// Default helper: check /boot RW state using shared MOUNT_INFO_PATH
+pub fn is_boot_rw() -> Result<bool, MountError> {
+    is_boot_rw_at(Path::new(MOUNT_INFO_PATH))
+}
+
 #[cfg(not(feature = "test-remount"))]
-pub fn remount_boot_ro(mounts_path: &Path) -> Result<(), MountError> {
-    match is_boot_rw(mounts_path)? {
+fn remount_boot_ro_at(mounts_path: &Path) -> Result<(), MountError> {
+    match is_boot_rw_at(mounts_path)? {
         true => {
             let output = Command::new("mount")
                 .arg("-o")
@@ -64,8 +72,8 @@ pub fn remount_boot_ro(mounts_path: &Path) -> Result<(), MountError> {
 }
 
 #[cfg(not(feature = "test-remount"))]
-pub fn remount_boot_rw(mounts_path: &Path) -> Result<(), MountError> {
-    match is_boot_rw(mounts_path)? {
+fn remount_boot_rw_at(mounts_path: &Path) -> Result<(), MountError> {
+    match is_boot_rw_at(mounts_path)? {
         false => {
             let output = Command::new("mount")
                 .arg("-o")
@@ -99,15 +107,36 @@ pub fn remount_boot_rw(mounts_path: &Path) -> Result<(), MountError> {
     }
 }
 
+/// Default helper: remount /boot RO using shared MOUNT_INFO_PATH
+#[cfg(not(feature = "test-remount"))]
+pub fn remount_boot_ro() -> Result<(), MountError> {
+    remount_boot_ro_at(Path::new(MOUNT_INFO_PATH))
+}
+
+/// Default helper: remount /boot RW using shared MOUNT_INFO_PATH
+#[cfg(not(feature = "test-remount"))]
+pub fn remount_boot_rw() -> Result<(), MountError> {
+    remount_boot_rw_at(Path::new(MOUNT_INFO_PATH))
+}
+
 /// For testing without actually remounting /mount
 #[cfg(feature = "test-remount")]
-pub fn remount_boot_rw(_mounts_path: &Path) -> Result<(), MountError> {
-    // Stubbed for testing
+fn remount_boot_rw_at(_mounts_path: &Path) -> Result<(), MountError> {
     Ok(())
 }
 /// For testing without actually remounting /mount
 #[cfg(feature = "test-remount")]
-pub fn remount_boot_ro(_mounts_path: &Path) -> Result<(), MountError> {
+fn remount_boot_ro_at(_mounts_path: &Path) -> Result<(), MountError> {
+    Ok(())
+}
+
+/// For testing feature: default helpers no-op
+#[cfg(feature = "test-remount")]
+pub fn remount_boot_rw() -> Result<(), MountError> {
+    Ok(())
+}
+#[cfg(feature = "test-remount")]
+pub fn remount_boot_ro() -> Result<(), MountError> {
     Ok(())
 }
 
@@ -130,7 +159,7 @@ mod test {
                              none /boot tmpfs ro 0 0\n";
         let mounts_path = create_mock_file(mounts_content);
 
-        let result = remount_boot_ro(&mounts_path);
+        let result = remount_boot_ro_at(&mounts_path);
         assert!(result.is_ok());
     }
 
@@ -141,7 +170,7 @@ mod test {
                              none /boot tmpfs rw 0 0\n";
         let mounts_path = create_mock_file(mounts_content);
 
-        let result = remount_boot_rw(&mounts_path);
+        let result = remount_boot_rw_at(&mounts_path);
         assert!(result.is_ok());
     }
 
@@ -149,18 +178,18 @@ mod test {
     fn test_is_boot_rw_detection() {
         // Test RW case - should return true
         let rw_path = create_mock_file("device /boot ext4 rw,relatime 0 0");
-        assert!(is_boot_rw(&rw_path).unwrap());
+        assert!(is_boot_rw_at(&rw_path).unwrap());
 
         // Test RO case - should return false
         let ro_path = create_mock_file("device /boot ext4 ro,relatime 0 0");
-        assert!(!is_boot_rw(&ro_path).unwrap());
+        assert!(!is_boot_rw_at(&ro_path).unwrap());
 
         // Test missing /boot - should error
         let missing_path = create_mock_file("device /other ext4 rw 0 0");
-        assert!(is_boot_rw(&missing_path).is_err());
+        assert!(is_boot_rw_at(&missing_path).is_err());
 
         // Test malformed line - should error
         let malformed_path = create_mock_file("incomplete fields");
-        assert!(is_boot_rw(&malformed_path).is_err());
+        assert!(is_boot_rw_at(&malformed_path).is_err());
     }
 }

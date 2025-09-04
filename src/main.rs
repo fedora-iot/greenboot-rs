@@ -10,13 +10,11 @@ use greenboot::{
 };
 use greenboot::{is_boot_rw, remount_boot_ro, remount_boot_rw};
 use serde::Deserialize;
-use std::path::Path;
 use std::process::Command;
 
 /// greenboot config path
 static GREENBOOT_CONFIG_FILE: &str = "/etc/greenboot/greenboot.conf";
 static GRUB_PATH: &str = "/boot/grub2/grubenv";
-static MOUNT_INFO_PATH: &str = "/proc/mounts";
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -107,21 +105,21 @@ enum Commands {
 }
 
 /// Execute a mutating GRUB operation while ensuring /boot is temporarily remounted RW if needed
-fn with_boot_rw<F>(mount_info_path: &str, f: F) -> Result<()>
+fn with_boot_rw<F>(f: F) -> Result<()>
 where
     F: FnOnce() -> Result<()>,
 {
-    let was_rw = is_boot_rw(Path::new(mount_info_path))
-        .map_err(|e| anyhow::anyhow!("Failed to check boot mount state: {}", e))?;
+    let was_rw =
+        is_boot_rw().map_err(|e| anyhow::anyhow!("Failed to check boot mount state: {}", e))?;
 
     if !was_rw {
-        remount_boot_rw(Path::new(mount_info_path)).context("Failed to remount /boot as rw")?;
+        remount_boot_rw().context("Failed to remount /boot as rw")?;
     }
 
     let op_result = f();
 
     if !was_rw {
-        remount_boot_ro(Path::new(mount_info_path)).context("Failed to remount /boot as ro")?;
+        remount_boot_ro().context("Failed to remount /boot as ro")?;
     }
 
     op_result
@@ -219,11 +217,11 @@ fn health_check() -> Result<()> {
             )?)
             .unwrap_or_else(|e| log::error!("cannot set motd: {e}"));
 
-            with_boot_rw(MOUNT_INFO_PATH, || set_boot_status(true, GRUB_PATH))?;
+            with_boot_rw(|| set_boot_status(true, GRUB_PATH))?;
 
             // Unset rollback trigger on successful health check
             if get_rollback_trigger(GRUB_PATH).unwrap_or(false) {
-                with_boot_rw(MOUNT_INFO_PATH, || unset_rollback_trigger(GRUB_PATH))
+                with_boot_rw(|| unset_rollback_trigger(GRUB_PATH))
                     .unwrap_or_else(|e| log::error!("Failed to unset rollback trigger: {e}"));
             }
 
@@ -243,7 +241,7 @@ fn health_check() -> Result<()> {
                 errors.iter().for_each(|e| log::error!("{e}"));
             }
 
-            with_boot_rw(MOUNT_INFO_PATH, || set_boot_status(false, GRUB_PATH))
+            with_boot_rw(|| set_boot_status(false, GRUB_PATH))
                 .unwrap_or_else(|e| log::error!("cannot set boot_status: {e}"));
 
             // Check if boot_counter is 0 (exhausted retries) or if no counter is set
@@ -262,7 +260,7 @@ fn health_check() -> Result<()> {
                         match handle_rollback() {
                             Ok(()) => {
                                 log::info!("Rollback successful");
-                                with_boot_rw(MOUNT_INFO_PATH, || {
+                                with_boot_rw(|| {
                                     unset_boot_counter(GRUB_PATH)?;
                                     unset_rollback_trigger(GRUB_PATH)?;
                                     Ok(())
@@ -289,10 +287,8 @@ fn health_check() -> Result<()> {
                         "First health check failure, setting boot counter to {}",
                         config.max_reboot
                     );
-                    with_boot_rw(MOUNT_INFO_PATH, || {
-                        set_boot_counter(config.max_reboot, GRUB_PATH)
-                    })
-                    .unwrap_or_else(|e| log::error!("cannot set boot_counter: {e}"));
+                    with_boot_rw(|| set_boot_counter(config.max_reboot, GRUB_PATH))
+                        .unwrap_or_else(|e| log::error!("cannot set boot_counter: {e}"));
                     handle_reboot(false).unwrap_or_else(|e| log::error!("cannot reboot: {e}"));
                 }
             }
@@ -345,7 +341,7 @@ fn main() -> Result<()> {
         Commands::HealthCheck => health_check(),
         Commands::SetRollbackTrigger => {
             log::info!("Setting rollback trigger for next boot...");
-            with_boot_rw(MOUNT_INFO_PATH, || set_rollback_trigger(GRUB_PATH))?;
+            with_boot_rw(|| set_rollback_trigger(GRUB_PATH))?;
             log::info!("Rollback trigger set successfully.");
             Ok(())
         }
