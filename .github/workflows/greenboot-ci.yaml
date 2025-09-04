@@ -66,7 +66,7 @@ jobs:
 
     steps:
       - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v3.1.2
+        uses: sclorg/testing-farm-as-github-action@v4.1.0
         with:
           compose: CentOS-Stream-10
           api_key: ${{ secrets.TF_API_KEY }}
@@ -112,7 +112,7 @@ jobs:
 
     steps:
       - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v3.1.2
+        uses: sclorg/testing-farm-as-github-action@v4.1.0
         with:
           compose: Fedora-Rawhide
           api_key: ${{ secrets.TF_API_KEY }}
@@ -135,7 +135,7 @@ jobs:
 
     steps:
       - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v3.1.2
+        uses: sclorg/testing-farm-as-github-action@v4.1.0
         with:
           compose: CentOS-Stream-9
           api_key: ${{ secrets.TF_API_KEY }}
