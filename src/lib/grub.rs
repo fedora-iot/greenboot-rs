@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 use anyhow::{Context, Result, bail};
-use std::path::Path;
 use std::process::Command;
 use std::str;
-
-use crate::mount::{is_boot_rw, remount_boot_ro, remount_boot_rw};
 
 /// fetches boot_counter value, none if not set
 pub fn get_boot_counter(grub_path: &str) -> Result<Option<i32>> {
@@ -33,7 +30,7 @@ pub fn get_boot_counter(grub_path: &str) -> Result<Option<i32>> {
 }
 
 /// sets grub variable boot_counter if not set
-pub fn set_boot_counter(reboot_count: u16, grub_path: &str, mount_info_path: &str) -> Result<()> {
+pub fn set_boot_counter(reboot_count: u16, grub_path: &str) -> Result<()> {
     match get_boot_counter(grub_path) {
         Ok(Some(i)) => {
             bail!("already set boot_counter={i}");
@@ -48,32 +45,32 @@ pub fn set_boot_counter(reboot_count: u16, grub_path: &str, mount_info_path: &st
     }
 
     log::info!("setting boot counter");
-    set_grub_var("boot_counter", reboot_count, grub_path, mount_info_path)?;
+    set_grub_var("boot_counter", reboot_count, grub_path)?;
     Ok(())
 }
 /// sets grub variable boot_success
-pub fn set_boot_status(success: bool, grub_path: &str, mount_info_path: &str) -> Result<()> {
+pub fn set_boot_status(success: bool, grub_path: &str) -> Result<()> {
     if success {
-        set_grub_var("boot_success", 1, grub_path, mount_info_path)?;
-        unset_boot_counter(grub_path, mount_info_path)?;
+        set_grub_var("boot_success", 1, grub_path)?;
+        unset_boot_counter(grub_path)?;
         return Ok(());
     }
-    set_grub_var("boot_success", 0, grub_path, mount_info_path)
+    set_grub_var("boot_success", 0, grub_path)
 }
 
 /// unset boot_counter
-pub fn unset_boot_counter(grub_path: &str, mount_info_path: &str) -> Result<()> {
-    unset_grub_var("boot_counter", grub_path, mount_info_path)
+pub fn unset_boot_counter(grub_path: &str) -> Result<()> {
+    unset_grub_var("boot_counter", grub_path)
 }
 
 /// sets greenboot_rollback_trigger=1
-pub fn set_rollback_trigger(grub_path: &str, mount_info_path: &str) -> Result<()> {
-    set_grub_var("greenboot_rollback_trigger", 1, grub_path, mount_info_path)
+pub fn set_rollback_trigger(grub_path: &str) -> Result<()> {
+    set_grub_var("greenboot_rollback_trigger", 1, grub_path)
 }
 
 /// unsets greenboot_rollback_trigger
-pub fn unset_rollback_trigger(grub_path: &str, mount_info_path: &str) -> Result<()> {
-    unset_grub_var("greenboot_rollback_trigger", grub_path, mount_info_path)
+pub fn unset_rollback_trigger(grub_path: &str) -> Result<()> {
+    unset_grub_var("greenboot_rollback_trigger", grub_path)
 }
 
 /// gets greenboot_rollback_trigger value, returns true if set to 1
@@ -94,56 +91,36 @@ pub fn get_rollback_trigger(grub_path: &str) -> Result<bool> {
     Ok(false) // Not set means false
 }
 
-fn unset_grub_var(key: &str, grub_path: &str, mount_info_path: &str) -> Result<()> {
-    let was_rw = is_boot_rw(Path::new(mount_info_path))
-        .map_err(|e| anyhow::anyhow!("Failed to check boot mount state: {}", e))?;
-
-    if !was_rw {
-        remount_boot_rw(Path::new(mount_info_path)).context("Failed to remount /boot as rw")?;
-    }
-
+fn unset_grub_var(key: &str, grub_path: &str) -> Result<()> {
     // Execute GRUB command and capture result
     let grub_result = Command::new("grub2-editenv")
         .arg(grub_path)
         .arg("unset")
         .arg(key)
         .status()
-        .context("Unable to clear boot_counter");
+        .context("Unable to clear boot_counter")?;
 
-    // Always attempt to restore mount state, regardless of GRUB command result
-    if !was_rw {
-        remount_boot_ro(Path::new(mount_info_path)).context("Failed to remount /boot as ro")?;
+    if !grub_result.success() {
+        bail!("Failed to unset grubenv key: {key}");
     }
 
-    // Now check the GRUB command result
-    grub_result?;
     log::info!("Clear grubenv: {key}");
     Ok(())
 }
 
-fn set_grub_var(key: &str, val: u16, grub_path: &str, mount_info_path: &str) -> Result<()> {
-    let was_rw = is_boot_rw(Path::new(mount_info_path))
-        .map_err(|e| anyhow::anyhow!("Failed to check boot mount state: {}", e))?;
-
-    if !was_rw {
-        remount_boot_rw(Path::new(mount_info_path)).context("Failed to remount /boot as rw")?;
-    }
-
+fn set_grub_var(key: &str, val: u16, grub_path: &str) -> Result<()> {
     // Execute GRUB command and capture result
     let grub_result = Command::new("grub2-editenv")
         .arg(grub_path)
         .arg("set")
         .arg(format!("{key}={val}"))
         .status()
-        .context("Unable to set grubenv");
+        .context("Unable to set grubenv")?;
 
-    // Always attempt to restore mount state, regardless of GRUB command result
-    if !was_rw {
-        remount_boot_ro(Path::new(mount_info_path))
-            .context("Failed to remount /boot as read-only")?;
+    if !grub_result.success() {
+        bail!("Failed to set grubenv key: {key}");
     }
 
-    grub_result?;
     log::info!("Set grubenv: {key}={val}");
     Ok(())
 }
@@ -160,8 +137,6 @@ mod tests {
     use tempfile::TempDir;
     use tempfile::tempdir;
 
-    static MOUNT_INFO_PATH: &str = "testing_assets/mounts";
-
     fn setup_test_paths() -> (TempDir, String) {
         let temp_dir = tempdir().unwrap();
         let temp_grubenv = temp_dir.path().join("grubenv");
@@ -172,7 +147,7 @@ mod tests {
     #[test]
     fn test_boot_counter_set() {
         let (_temp_dir, grubenv) = setup_test_paths();
-        set_boot_counter(10, &grubenv, MOUNT_INFO_PATH).unwrap();
+        set_boot_counter(10, &grubenv).unwrap();
         assert_eq!(get_boot_counter(&grubenv).unwrap(), Some(10));
     }
 
@@ -185,7 +160,7 @@ mod tests {
             .arg("boot_counter=99")
             .status()
             .context("Cannot create grub variable boot_counter");
-        set_boot_counter(20, &grubenv, MOUNT_INFO_PATH).ok();
+        set_boot_counter(20, &grubenv).ok();
         assert_eq!(get_boot_counter(&grubenv).unwrap(), Some(99));
     }
 
@@ -198,7 +173,7 @@ mod tests {
             .arg("boot_counter=foo")
             .status()
             .context("Cannot create grub variable boot_counter");
-        set_boot_counter(13, &grubenv, MOUNT_INFO_PATH).unwrap();
+        set_boot_counter(13, &grubenv).unwrap();
         assert_eq!(get_boot_counter(&grubenv).unwrap(), Some(13));
     }
 
@@ -211,7 +186,7 @@ mod tests {
             .arg("boot_counter=199")
             .status()
             .context("Cannot create grub variable boot_counter");
-        unset_boot_counter(&grubenv, MOUNT_INFO_PATH).unwrap();
+        unset_boot_counter(&grubenv).unwrap();
         assert_eq!(get_boot_counter(&grubenv).unwrap(), None);
     }
 
@@ -235,11 +210,11 @@ mod tests {
         assert!(!get_rollback_trigger(&grubenv).unwrap());
 
         // Test setting rollback trigger
-        set_rollback_trigger(&grubenv, MOUNT_INFO_PATH).unwrap();
+        set_rollback_trigger(&grubenv).unwrap();
         assert!(get_rollback_trigger(&grubenv).unwrap());
 
         // Test unsetting rollback trigger
-        unset_rollback_trigger(&grubenv, MOUNT_INFO_PATH).unwrap();
+        unset_rollback_trigger(&grubenv).unwrap();
         assert!(!get_rollback_trigger(&grubenv).unwrap());
     }
 
@@ -248,17 +223,17 @@ mod tests {
         let (_temp_dir, grubenv) = setup_test_paths();
 
         // Set boot counter
-        set_boot_counter(3, &grubenv, MOUNT_INFO_PATH).unwrap();
+        set_boot_counter(3, &grubenv).unwrap();
 
         // Set rollback trigger
-        set_rollback_trigger(&grubenv, MOUNT_INFO_PATH).unwrap();
+        set_rollback_trigger(&grubenv).unwrap();
 
         // Both should coexist
         assert_eq!(get_boot_counter(&grubenv).unwrap(), Some(3));
         assert!(get_rollback_trigger(&grubenv).unwrap());
 
         // Unset rollback trigger, boot_counter should remain
-        unset_rollback_trigger(&grubenv, MOUNT_INFO_PATH).unwrap();
+        unset_rollback_trigger(&grubenv).unwrap();
         assert_eq!(get_boot_counter(&grubenv).unwrap(), Some(3));
         assert!(!get_rollback_trigger(&grubenv).unwrap());
     }
