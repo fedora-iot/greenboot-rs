@@ -26,4 +26,3 @@ provision:
   summary: Test greenboot with ostree commit
   environment+:
     TEST_CASE: ostree-commit
-

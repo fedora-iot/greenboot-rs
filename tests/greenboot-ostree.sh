@@ -42,7 +42,7 @@ IMAGE_KEY="ostree-${TEST_UUID}"
 GUEST_ADDRESS=192.168.100.50
 SSH_USER="admin"
 OS_NAME="rhel-edge"
-IMAGE_TYPE=edge-commit
+IMAGE_TYPE=fedora-iot-commit
 PROD_REPO_URL=http://192.168.100.1/repo
 
 # Set up temporary files.
@@ -81,14 +81,13 @@ sudo mkdir -p /etc/osbuild-composer/repositories
 
 # Set os-variant and boot location used by virt-install.
 case "${ID}-${VERSION_ID}" in
-    "centos-9")
-        OSTREE_REF="centos/9/${ARCH}/edge"
-        OS_VARIANT="centos-stream9"
-        BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
-        CURRENT_COMPOSE_CS9=$(curl -s "https://composes.stream.centos.org/production/" | grep -ioE ">CentOS-Stream-9-.*/<" | tr -d '>/<' | tail -1)
-        BOOT_LOCATION="https://composes.stream.centos.org/production/${CURRENT_COMPOSE_CS9}/compose/BaseOS/x86_64/os/"
-        sudo dnf install -y make rpm-build rust-toolset
-        sudo cp files/centos-stream-9.json /etc/osbuild-composer/repositories/centos-9.json;;
+    "fedora-43")
+        OSTREE_REF="fedora/43/${ARCH}/iot"
+        OS_VARIANT="fedora-unknown"
+        BOOT_ARGS="uefi"
+        BOOT_LOCATION="https://dl.fedoraproject.org/pub/fedora/linux/development/43/Everything/x86_64/os/"
+        sudo dnf install -y rpmbuild rust-packaging
+        sudo cp files/fedora-43.json /etc/osbuild-composer/repositories/fedora-43.json;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
         exit 1;;
