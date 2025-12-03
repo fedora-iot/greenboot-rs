@@ -11,8 +11,8 @@ Summary:	Generic Health Check Framework for systemd
 # Aggregated license of statically linked dependencies as per %%cargo_license_summary
 License:	BSD-3-Clause AND ISC AND MIT AND Unicode-DFS-2016 AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT) AND (Unlicense OR MIT)
 URL:		https://github.com/fedora-iot/greenboot-rs
-Source0:	%{url}/releases/download/%{version}/%{name}-%{version}.tar.gz
-Source1:	%{name}-%{version}-vendor-patched.tar.xz
+Source0:	%{url}/releases/download/%{version}/%{name}-%{version}-%{release}.tar.gz
+Source1:	%{name}-%{version}-%{release}-vendor-patched.tar.xz
 
 ExcludeArch:	%{ix86}
 
@@ -57,10 +57,10 @@ This package adds some default healthchecks for greenboot.
 
 %prep
 %if 0%{?eln} || 0%{?centos} || 0%{?rhel}
-%autosetup -p1 -a1 -n %{name}-%{version}
+%autosetup -p1 -a1 -n %{name}-%{version}-%{release}
 %cargo_prep -v vendor
 %else
-%autosetup -n %{name}-%{version}
+%autosetup -n %{name}-%{version}-%{release}
 %cargo_prep
 %generate_buildrequires
 %cargo_generate_buildrequires

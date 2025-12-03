@@ -1,4 +1,5 @@
 RELEASE ?= 0
+SPEC_RELEASE ?= $(shell rpmspec -q --srpm --qf '%{release}\n' greenboot-rs.spec | head -n1)
 TARGETDIR ?= target
 SRCDIR ?= .
 VENDOR ?= false
@@ -23,8 +24,8 @@ GREENBOOT_RUST_DEPENDENCIES = rust-anyhow+default-devel \
 
 # Create unique filenames with version+commit for build isolation
 RPM_SPECFILE=rpmbuild/SPECS/greenboot-rs-$(VERSION)-$(COMMIT).spec
-RPM_TARBALL=rpmbuild/SOURCES/greenboot-rs-$(VERSION).tar.gz
-VENDOR_TARBALL=greenboot-rs-$(VERSION)-vendor-patched.tar.xz
+RPM_TARBALL=rpmbuild/SOURCES/greenboot-rs-$(VERSION)-$(SPEC_RELEASE).tar.gz
+VENDOR_TARBALL=greenboot-rs-$(VERSION)-$(SPEC_RELEASE)-vendor-patched.tar.xz
 
 ifeq ($(RELEASE),1)
 	PROFILE ?= release
@@ -67,12 +68,12 @@ vendor:
 	mkdir -p .cargo; \
 	cargo vendor-filterer $${args} > ./.cargo/config.toml; \
 
-RPM_VENDOR_TARBALL=rpmbuild/SOURCES/greenboot-rs-$(VERSION)-vendor-patched.tar.xz
+RPM_VENDOR_TARBALL=rpmbuild/SOURCES/greenboot-rs-$(VERSION)-$(SPEC_RELEASE)-vendor-patched.tar.xz
 
 $(RPM_TARBALL): $(VENDOR_TARBALL)
 	mkdir -p $(CURDIR)/rpmbuild/SOURCES
-	# Create tarball with directory name matching spec file expectations: greenboot-rs-<version>/
-	git archive --prefix=greenboot-rs-$(VERSION)/ --format=tar.gz HEAD > $(RPM_TARBALL)
+	# Create tarball with directory name matching spec file expectations: greenboot-rs-<version>-<release>/
+	git archive --prefix=greenboot-rs-$(VERSION)-$(SPEC_RELEASE)/ --format=tar.gz HEAD > $(RPM_TARBALL)
 	mv $(VENDOR_TARBALL) $(RPM_VENDOR_TARBALL);
 
 .PHONY: build
