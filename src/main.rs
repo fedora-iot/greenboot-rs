@@ -10,7 +10,7 @@ use greenboot::{
     unset_boot_counter, unset_rollback_trigger,
 };
 use greenboot::{is_boot_rw, remount_boot_ro, remount_boot_rw};
-use std::process::Command;
+use std::{process::Command, sync::OnceLock};
 
 /// greenboot config path
 static GREENBOOT_CONFIG_FILE: &str = "/etc/greenboot/greenboot.conf";
@@ -103,11 +103,41 @@ enum Commands {
     SetRollbackTrigger,
 }
 
+/// Determine if we're executing inside a containerized environment.
+fn running_in_container() -> bool {
+    static IS_CONTAINER: OnceLock<bool> = OnceLock::new();
+    *IS_CONTAINER.get_or_init(|| {
+        match Command::new("systemd-detect-virt")
+            .arg("--container")
+            .status()
+        {
+            Ok(status) => {
+                if status.success() {
+                    log::info!("Container environment detected; skipping /boot remounts");
+                    true
+                } else {
+                    log::debug!("systemd-detect-virt reported non-container context ({status})");
+                    false
+                }
+            }
+            Err(err) => {
+                log::debug!("Unable to determine container state via systemd-detect-virt: {err}");
+                false
+            }
+        }
+    })
+}
+
 /// Execute a mutating GRUB operation while ensuring /boot is temporarily remounted RW if needed
 fn with_boot_rw<F>(f: F) -> Result<()>
 where
     F: FnOnce() -> Result<()>,
 {
+    if running_in_container() {
+        log::info!("running inside container; treating /boot as unavailable");
+        return f();
+    }
+
     let was_rw =
         is_boot_rw().map_err(|e| anyhow::anyhow!("Failed to check boot mount state: {}", e))?;
 
