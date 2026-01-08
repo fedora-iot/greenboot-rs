@@ -192,6 +192,20 @@ COPY failing_script.sh /etc/greenboot/red.d
 
 COPY passing_binary /etc/greenboot/check/required.d/
 COPY failing_binary /etc/greenboot/check/wanted.d/
+
+# TODO: REMOVE IT AFTER BUG FIXED !!!
+# Workaround for bug https://github.com/osbuild/bootc-image-builder/issues/1173
+RUN mkdir -p /boot/efi/EFI/fedora && \
+    mkdir -p /boot/efi/EFI/BOOT && \
+    if [ -f /usr/share/shim/*/shimx64.efi ]; then \
+        cp /usr/share/shim/*/shimx64.efi /boot/efi/EFI/fedora/ && \
+        cp /usr/share/shim/*/shimx64.efi /boot/efi/EFI/BOOT/BOOTX64.EFI; \
+    fi && \
+    if [ -f /usr/lib/grub/x86_64-efi/grub.efi ]; then \
+        cp /usr/lib/grub/x86_64-efi/grub.efi /boot/efi/EFI/fedora/grubx64.efi 2>/dev/null || true; \
+    fi && \
+    dnf5 -y reinstall shim-x64 grub2-efi-x64 grub2-common 2>/dev/null || true
+
 # Clean up by removing the local RPMs if desired
 RUN rm -f /tmp/greenboot-*.rpm
 EOF
