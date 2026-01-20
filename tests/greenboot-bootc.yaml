@@ -119,6 +119,93 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    # case: check greenboot-set-rollback-trigger log at first boot
+    - name: check greenboot-set-rollback-trigger at first boot
+      block:
+        - name: systemd update done log should be found here
+          command: journalctl -b -7 -u systemd-update-done.service
+          become: yes
+          register: result_systemd_update_log
+
+        - name: greenboot rollback trigger should be found here
+          command: journalctl -b -7 -u greenboot-set-rollback-trigger.service
+          become: yes
+          register: result_greenboot_trigger_log
+
+        - assert:
+            that:
+              - "'Finished systemd-update-done.service - Update is Completed' in result_systemd_update_log.stdout"
+              - "'Rollback trigger set successfully' in result_greenboot_trigger_log.stdout"
+              - "'Dependency failed' not in result_greenboot_trigger_log.stdout"
+            fail_msg: "Expected greenboot trigger log or systemd update log not found, or dependency failure found"
+            success_msg: "Found expected log and no dependency failures"
+
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check greenboot-set-rollback-trigger log at boot after upgrade
+    - name: check greenboot-set-rollback-trigger at boot after upgrade
+      block:
+        - name: systemd update done log should be found here
+          command: journalctl -b -6 -u systemd-update-done.service
+          become: yes
+          register: result_systemd_update_log
+
+        - name: greenboot rollback trigger should be found here
+          command: journalctl -b -6 -u greenboot-set-rollback-trigger.service
+          become: yes
+          register: result_greenboot_trigger_log
+
+        - assert:
+            that:
+              - "'Finished systemd-update-done.service - Update is Completed' in result_systemd_update_log.stdout"
+              - "'Rollback trigger set successfully' in result_greenboot_trigger_log.stdout"
+              - "'Dependency failed' not in result_greenboot_trigger_log.stdout"
+            fail_msg: "Expected greenboot trigger log or systemd update log not found, or dependency failure found"
+            success_msg: "Found expected log and no dependency failures"
+
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check greenboot-set-rollback-trigger log at boot after fallback
+    - name: check greenboot-set-rollback-trigger at boot after fallback
+      block:
+        - name: systemd update done log should be found here
+          command: journalctl -b -0 -u systemd-update-done.service
+          become: yes
+          register: result_systemd_update_log
+
+        - name: greenboot rollback trigger should be found here
+          command: journalctl -b -0 -u greenboot-set-rollback-trigger.service
+          become: yes
+          register: result_greenboot_trigger_log
+
+        - assert:
+            that:
+              - "'Update is Completed was skipped because no trigger condition checks were met' in result_systemd_update_log.stdout"
+              - "'Greenboot Rollback trigger was skipped because no trigger condition checks were met' in result_greenboot_trigger_log.stdout"
+              - "'Dependency failed' not in result_greenboot_trigger_log.stdout"
+            fail_msg: "Expected greenboot trigger log or systemd update log not found, or dependency failure found"
+            success_msg: "Found expected log and no dependency failures"
+
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
     # case: check disable health checks
     - name: check disable health checks
       block:

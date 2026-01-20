@@ -9,7 +9,7 @@ use crate::grub::get_boot_counter;
 
 /// Detects if the system is managed by bootc or is a rpm-ostree system
 /// Inspect bootc status JSON and decide based on `status.booted.incompatible`.
-fn detect_os_deployment() -> Option<&'static str> {
+pub fn detect_os_deployment() -> Option<&'static str> {
     let output = match Command::new("bootc")
         .args(["status", "--booted", "--json"])
         .output()

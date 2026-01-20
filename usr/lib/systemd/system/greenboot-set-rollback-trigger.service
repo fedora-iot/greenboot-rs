@@ -1,11 +1,16 @@
 [Unit]
 Description=Greenboot Rollback trigger
-After=systemd-update-done.service
-Requisite=systemd-update-done.service
-Before=greenboot-healthcheck.service
+DefaultDependencies=no
+After=local-fs.target
+Before=systemd-update-done.service greenboot-healthcheck.service
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target
+ConditionNeedsUpdate=|/etc
+ConditionNeedsUpdate=|/var
 
 [Service]
 Type=oneshot
+Restart=no
 ExecStart=/usr/libexec/greenboot/greenboot set-rollback-trigger
 
 [Install]
