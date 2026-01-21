@@ -30,7 +30,7 @@ actions:
   - bash -c "tar -xvf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
   - bash -c "tar -czf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar.gz greenboot-rs-${PACKIT_PROJECT_VERSION}"
   - bash -c "rm -rf greenboot-rs-${PACKIT_PROJECT_VERSION} greenboot-rs-${PACKIT_PROJECT_VERSION}.tar vendor"
-  - bash -c "ls -1 ./greenboot-rs-*.tar.gz"
+  - bash -c "ls -1 ./greenboot-rs-*.tar.gz  ./greenboot-rs-*.tar.xz"
   post-upstream-clone:
   - "sed -i '/^%global forgeurl/d' greenboot-rs.spec"
   - "sed -i '/^%forgemeta/d' greenboot-rs.spec"
