@@ -199,6 +199,35 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    - name: Check gating tests output
+      block:
+        - name: Check greenboot version in Cargo file
+          shell: |
+            /usr/libexec/greenboot/greenboot --version
+          register: result_cargo_version
+          become: yes
+          ignore_errors: yes
+
+        - name: Query installed greenboot version in NVR format
+          shell: |
+            rpm -q --qf '%{VERSION}\n' greenboot
+          register: result_greenboot_nvr
+          become: yes
+          ignore_errors: yes
+
+        - assert:
+            that:
+              - "result_greenboot_nvr.stdout in result_cargo_version.stdout"
+            fail_msg: "greenboot's package version in Cargo file mismatches specfile"
+            success_msg: "greenboot's package version in Cargo file matches specfile"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
     - assert:
         that:
           - failed_counter == "0"
