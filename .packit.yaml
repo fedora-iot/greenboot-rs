@@ -5,6 +5,8 @@ specfile_path: greenboot-rs.spec
 files_to_sync:
     - greenboot-rs.spec
     - .packit.yaml
+    - src: "greenboot-rs-*.tar.xz"
+      dest: "."
 
 upstream_package_name: greenboot-rs
 downstream_package_name: greenboot-rs
