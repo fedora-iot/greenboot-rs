@@ -3,10 +3,12 @@
 specfile_path: greenboot-rs.spec
 
 files_to_sync:
-    - greenboot-rs.spec
-    - .packit.yaml
+  src:
+    - "greenboot-rs.spec"
+    - ".packit.yaml"
     - "greenboot-rs-*.tar.xz"
-
+  dest: .
+  
 upstream_package_name: greenboot-rs
 downstream_package_name: greenboot-rs
 
@@ -23,13 +25,6 @@ srpm_build_deps:
 actions:
   get-current-version:
   - grep -oP '^Version:\s+\K\S+' greenboot-rs.spec
-  create-archive:
-  # Create main source archive for spec compatibility
-  - bash -c "git archive --prefix=greenboot-rs-${PACKIT_PROJECT_VERSION}/ --format=tar HEAD > greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
-  - bash -c "tar -xvf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
-  - bash -c "tar -czf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar.gz greenboot-rs-${PACKIT_PROJECT_VERSION}"
-  - bash -c "rm -rf greenboot-rs-${PACKIT_PROJECT_VERSION} greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
-  - bash -c "ls -1 ./greenboot-rs-*.tar.gz"
   post-upstream-clone:
   - "sed -i '/^%global forgeurl/d' greenboot-rs.spec"
   - "sed -i '/^%forgemeta/d' greenboot-rs.spec"
