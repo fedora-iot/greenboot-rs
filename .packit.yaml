@@ -25,15 +25,11 @@ srpm_build_deps:
 actions:
   get-current-version:
   - grep -oP '^Version:\s+\K\S+' greenboot-rs.spec
-  create-archive:
+  post-modifications:
   - "cargo vendor vendor"
   - bash -c "tar -cJf greenboot-rs-${PACKIT_PROJECT_VERSION}-vendor-patched.tar.xz vendor"
   - bash -c "rm -rf vendor"
-  - bash -c "ls -1 ./greenboot-rs-*.tar.xz"
-  pre-sync:
-  - "cargo vendor vendor"
-  - bash -c "tar -cJf greenboot-rs-${PACKIT_PROJECT_VERSION}-vendor-patched.tar.xz vendor"
-  - bash -c "rm -rf vendor"
+  - bash -c "cp ${PACKIT_UPSTREAM_REPO}/greenboot-rs-${PACKIT_PROJECT_VERSION}-vendor.tar.xz ${PACKIT_DOWNSTREAM_REPO}"
   post-upstream-clone:
   - "sed -i '/^%global forgeurl/d' greenboot-rs.spec"
   - "sed -i '/^%forgemeta/d' greenboot-rs.spec"
