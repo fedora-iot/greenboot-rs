@@ -41,6 +41,7 @@ actions:
   - "cargo vendor vendor"
   - bash -c "tar -cJf greenboot-rs-${PACKIT_PROJECT_VERSION}-vendor-patched.tar.xz vendor"
   - bash -c "rm -rf vendor"
+  - bash -c "ls -1 ./greenboot-rs-*.tar.xz"
   fix-spec-file:
   # This runs after Packit's release processing - disable debug package to prevent saypaul error
   - "sed -i '/^License:/a\\%global debug_package %{nil}' greenboot-rs.spec"
