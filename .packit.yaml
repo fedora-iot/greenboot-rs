@@ -23,13 +23,11 @@ actions:
   get-current-version:
   - grep -oP '^Version:\s+\K\S+' greenboot-rs.spec
   create-archive:
-  - "cargo vendor vendor"
-  # Create archive with version for spec compatibility
-  - bash -c "tar -cJf greenboot-rs-${PACKIT_PROJECT_VERSION}-vendor-patched.tar.xz vendor"
+  # Create main source archive for spec compatibility
   - bash -c "git archive --prefix=greenboot-rs-${PACKIT_PROJECT_VERSION}/ --format=tar HEAD > greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
   - bash -c "tar -xvf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
   - bash -c "tar -czf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar.gz greenboot-rs-${PACKIT_PROJECT_VERSION}"
-  - bash -c "rm -rf greenboot-rs-${PACKIT_PROJECT_VERSION} greenboot-rs-${PACKIT_PROJECT_VERSION}.tar vendor"
+  - bash -c "rm -rf greenboot-rs-${PACKIT_PROJECT_VERSION} greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
   - bash -c "ls -1 ./greenboot-rs-*.tar.gz"
   post-upstream-clone:
   - "sed -i '/^%global forgeurl/d' greenboot-rs.spec"
@@ -37,6 +35,10 @@ actions:
   - "sed -i '/^%forgeautosetup/d' greenboot-rs.spec"
   - bash -c "git config user.name 'Packit Build' || true"
   - bash -c "git config user.email 'packit@fedoraproject.org' || true"
+  # Create vendor tarball here so it runs for both copr_build and propose_downstream
+  - "cargo vendor vendor"
+  - bash -c "tar -cJf greenboot-rs-${PACKIT_PROJECT_VERSION}-vendor-patched.tar.xz vendor"
+  - bash -c "rm -rf vendor"
   fix-spec-file:
   # This runs after Packit's release processing - disable debug package to prevent saypaul error
   - "sed -i '/^License:/a\\%global debug_package %{nil}' greenboot-rs.spec"
