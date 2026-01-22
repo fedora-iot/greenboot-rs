@@ -3,11 +3,12 @@
 specfile_path: greenboot-rs.spec
 
 files_to_sync:
-    - greenboot-rs.spec
-    - .packit.yaml
-    - src: "greenboot-rs-*.tar.xz"
-      dest: "."
-
+  - src:
+      - "greenboot-rs.spec"
+      - ".packit.yaml"
+      - "greenboot-rs-*.tar.xz"
+    dest: .
+  
 upstream_package_name: greenboot-rs
 downstream_package_name: greenboot-rs
 
@@ -24,15 +25,11 @@ srpm_build_deps:
 actions:
   get-current-version:
   - grep -oP '^Version:\s+\K\S+' greenboot-rs.spec
-  create-archive:
+  post-modifications:
   - "cargo vendor vendor"
-  # Create archive with version for spec compatibility
   - bash -c "tar -cJf greenboot-rs-${PACKIT_PROJECT_VERSION}-vendor-patched.tar.xz vendor"
-  - bash -c "git archive --prefix=greenboot-rs-${PACKIT_PROJECT_VERSION}/ --format=tar HEAD > greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
-  - bash -c "tar -xvf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar"
-  - bash -c "tar -czf greenboot-rs-${PACKIT_PROJECT_VERSION}.tar.gz greenboot-rs-${PACKIT_PROJECT_VERSION}"
-  - bash -c "rm -rf greenboot-rs-${PACKIT_PROJECT_VERSION} greenboot-rs-${PACKIT_PROJECT_VERSION}.tar vendor"
-  - bash -c "ls -1 ./greenboot-rs-*.tar.gz  ./greenboot-rs-*.tar.xz"
+  - bash -c "rm -rf vendor"
+  - bash -c "[ -n \"${PACKIT_DOWNSTREAM_REPO}\" ] && cp ${PACKIT_UPSTREAM_REPO}/greenboot-rs-${PACKIT_PROJECT_VERSION}-vendor.tar.xz ${PACKIT_DOWNSTREAM_REPO} || true"
   post-upstream-clone:
   - "sed -i '/^%global forgeurl/d' greenboot-rs.spec"
   - "sed -i '/^%forgemeta/d' greenboot-rs.spec"
