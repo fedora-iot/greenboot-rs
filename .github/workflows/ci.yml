@@ -1,7 +1,7 @@
 on:
   push:
     branches:
-    - greenboot-rs
+    - main
   pull_request:
 
 name: Continuous integration
@@ -40,16 +40,6 @@ jobs:
     container: fedora:latest
     steps:
       - uses: actions/checkout@v4
-      - name: Cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
       - name: Install deps
         run: |
           dnf install -y make gcc git clippy cargo rust
@@ -58,42 +48,54 @@ jobs:
           command: clippy
           args: -- -D warnings -D clippy::panic -D clippy::todo
 
-  build_and_test:
+  build_and_test_with_coverage:
+    name: Build, test with coverage
     runs-on: ubuntu-latest
-    container: 
+    container:
       image: fedora:latest
       options: --user root
+    env:
+      CARGO_TERM_COLOR: always
+      LLVM_COV: /usr/bin/llvm-cov
+      LLVM_PROFDATA: /usr/bin/llvm-profdata
     steps:
       - name: Install deps
         run: |
-          dnf install -y make gcc git cargo rust git grub2-efi grub2-efi-modules shim
+          dnf install -y make gcc git cargo rust git grub2-efi grub2-efi-modules shim llvm
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Fix git trust
         run: git config --global --add safe.directory /__w/greenboot-rs/greenboot-rs
-      - name: Cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
       - name: Build
-        uses: actions-rs/cargo@v1
+        run: cargo build
+      - name: Run tests with coverage
+        run: |
+          cargo llvm-cov test -- --test-threads=1
+          cargo llvm-cov report --html --output-dir tests/coverage
+      - name: Upload coverage report (HTML artifact)
+        uses: actions/upload-artifact@v4
         with:
-          command: build
-      - name: Run tests with mock mounts
-        uses: actions-rs/cargo@v1
+          name: coverage-report
+          path: tests/coverage/
+          retention-days: 14
+      - name: Upload coverage report (GitHub Pages)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
         with:
-          command: test
-          args: --features test-remount -- --test-threads=1
-      - name: Run mount logic tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          # matches 2 remount tests
-          args: test_remount_boot   
+          path: tests/coverage/
+
+  deploy-pages:
+    name: Deploy coverage to GitHub Pages
+    needs: build_and_test_with_coverage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment: github-pages
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
