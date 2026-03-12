@@ -40,8 +40,15 @@ case "${ID}-${VERSION_ID}" in
         sudo dnf install -y rpmbuild rust-packaging
         ;;
     "fedora-44")
-        OS_VARIANT="fedora-rawhide"
+        OS_VARIANT="fedora-44"
         BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:44"
+        BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
+        BOOT_ARGS="uefi"
+        sudo dnf install -y rpmbuild rust-packaging
+        ;;
+    "fedora-45")
+        OS_VARIANT="fedora-rawhide"
+        BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:rawhide"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
         sudo dnf install -y rpmbuild rust-packaging
@@ -52,6 +59,22 @@ case "${ID}-${VERSION_ID}" in
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
         sudo dnf install -y make rpm-build rust-toolset
+        ;;
+    "rhel-9.8")
+        OS_VARIANT="rhel9-unknown"
+        BASE_IMAGE_URL="registry.stage.redhat.io/rhel9/rhel-bootc:9.8"
+        BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.8"
+        BOOT_ARGS="uefi"
+        sudo dnf install -y make rpm-build rust-toolset
+        sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8.repo
+        ;;
+    "rhel-10.2")
+        OS_VARIANT="rhel10-unknown"
+        BASE_IMAGE_URL="registry.stage.redhat.io/rhel10/rhel-bootc:10.2"
+        BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.2"
+        BOOT_ARGS="uefi"
+        sudo dnf install -y make rpm-build rust-toolset
+        sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-2.repo
         ;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
@@ -195,6 +218,19 @@ COPY failing_binary /etc/greenboot/check/wanted.d/
 # Clean up by removing the local RPMs if desired
 RUN rm -f /tmp/greenboot-*.rpm
 EOF
+
+if [[ "${ID}-${VERSION_ID}" == "rhel-9.8" ]]; then
+    tee -a Containerfile >> /dev/null << EOF
+COPY files/rhel-9-8.repo /etc/yum.repos.d/rhel-9-8.repo
+EOF
+fi
+
+if [[ "${ID}-${VERSION_ID}" == "rhel-10.2" ]]; then
+    tee -a Containerfile >> /dev/null << EOF
+COPY files/rhel-10-2.repo /etc/yum.repos.d/rhel-10-2.repo
+EOF
+fi
+
 podman build  --retry=5 --retry-delay=10s -t quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID} -f Containerfile .
 greenprint "Pushing bootc container to quay.io"
 podman push quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID}
@@ -305,7 +341,7 @@ sudo ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ${EDGE_USER}@${GUEST_ADDRESS} "echo
 sudo ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ${EDGE_USER}@${GUEST_ADDRESS} "echo ${EDGE_USER_PASSWORD} |nohup sudo -S systemctl reboot &>/dev/null & exit"
 
 # Wait vm to finish the fallback
-sleep 240
+sleep 300
 
 # Check for ssh ready to go.
 greenprint "🛃 Checking for SSH is ready to go"

@@ -1,0 +1,10 @@
+[RHEL-9.8-NIGHTLY-BaseOS]
+name=baseos
+baseurl=http://REPLACE_ME_HERE/rhel-9/nightly/RHEL-9/latest-RHEL-9.8.0/compose/BaseOS/x86_64/os/
+enabled=1
+gpgcheck=0
+[RHEL-9.8-NIGHTLY-AppStream]
+name=appstream
+baseurl=http://REPLACE_ME_HERE/rhel-9/nightly/RHEL-9/latest-RHEL-9.8.0/compose/AppStream/x86_64/os/
+enabled=1
+gpgcheck=0

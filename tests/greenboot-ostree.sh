@@ -64,7 +64,7 @@ sudo localectl set-locale LANG=en_US.UTF-8
 
 # Install required packages
 greenprint "Install required packages"
-sudo dnf install -y --nogpgcheck httpd osbuild osbuild-composer composer-cli ansible-core createrepo_c podman qemu-img firewalld qemu-kvm libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install rpmdevtools cargo lorax gobject-introspection
+sudo dnf install -y --nogpgcheck httpd osbuild osbuild-composer composer-cli ansible-core createrepo_c podman qemu-img firewalld qemu-kvm libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install rpmdevtools cargo lorax gobject-introspection make rpm-build rust-toolset
 
 # Avoid collection installation filed sometime
 for _ in $(seq 0 30); do
@@ -87,8 +87,13 @@ case "${ID}-${VERSION_ID}" in
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
         CURRENT_COMPOSE_CS9=$(curl -s "https://composes.stream.centos.org/production/" | grep -ioE ">CentOS-Stream-9-.*/<" | tr -d '>/<' | tail -1)
         BOOT_LOCATION="https://composes.stream.centos.org/production/${CURRENT_COMPOSE_CS9}/compose/BaseOS/x86_64/os/"
-        sudo dnf install -y make rpm-build rust-toolset
         sudo cp files/centos-stream-9.json /etc/osbuild-composer/repositories/centos-9.json;;
+    "rhel-9.8")
+        OSTREE_REF="rhel/9/${ARCH}/edge"
+        OS_VARIANT="rhel9-unknown"
+        BOOT_ARGS="uefi"
+        BOOT_LOCATION="http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/latest-RHEL-9.6.0/compose/BaseOS/x86_64/os/"
+        sed "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8-0.json | sudo tee /etc/osbuild-composer/repositories/rhel-98.json > /dev/null;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
         exit 1;;

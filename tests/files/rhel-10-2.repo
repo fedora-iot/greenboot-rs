@@ -1,0 +1,10 @@
+[RHEL-10.2-NIGHTLY-BaseOS]
+name=baseos
+baseurl=http://REPLACE_ME_HERE/rhel-10/nightly/RHEL-10/latest-RHEL-10.2/compose/BaseOS/x86_64/os
+enabled=1
+gpgcheck=0
+[RHEL-10.2-NIGHTLY-AppStream]
+name=appstream
+baseurl=http://REPLACE_ME_HERE/rhel-10/nightly/RHEL-10/latest-RHEL-10.2/compose/AppStream/x86_64/os/
+enabled=1
+gpgcheck=0
