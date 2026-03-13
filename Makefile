@@ -6,6 +6,11 @@ VERSION = $(shell grep -oP '^Version:\s+\K\S+' greenboot-rs.spec)
 COMMIT = $(shell (cd "$(SRCDIR)" && git rev-parse --short HEAD))
 TIMESTAMP = $(shell date +%Y%m%d%H%M%S)
 PLATFORMS = $(shell (echo {x86_64,aarch64,powerpc64le,s390x}-unknown-linux-gnu))
+
+LLVM_COV ?= /usr/bin/llvm-cov
+LLVM_PROFDATA ?= /usr/bin/llvm-profdata
+COVERAGE_OUTPUT_DIR ?= tests/coverage
+CARGO_LLVM_COV ?= $(shell command -v cargo-llvm-cov 2>/dev/null)
 GREENBOOT_RUST_DEPENDENCIES = rust-anyhow+default-devel \
 				rust-clap+derive-devel \
 				rust-clap+default-devel \
@@ -82,6 +87,20 @@ build:
 .PHONY: check
 check:
 	cargo test "--target-dir=${TARGETDIR}" ${CARGO_ARGS}
+
+.PHONY: test-coverage
+test-coverage:
+	@if [ ! -x "$(LLVM_COV)" ] || [ ! -x "$(LLVM_PROFDATA)" ]; then \
+		echo "ERROR: llvm-cov or llvm-profdata not found"; \
+		echo "  Install it with: sudo dnf install llvm"; \
+		exit 1; \
+	fi
+
+	@echo "Running test coverage (results will be in $(COVERAGE_OUTPUT_DIR))..."
+	sudo LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) cargo llvm-cov test -- --test-threads=1
+	sudo LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) cargo llvm-cov report --html --output-dir $(COVERAGE_OUTPUT_DIR)
+	sudo chmod -R 777 $(COVERAGE_OUTPUT_DIR)
+	@echo "Coverage report generated at $(COVERAGE_OUTPUT_DIR)/html/index.html"
 
 .PHONY: fmt
 fmt:
