@@ -99,30 +99,14 @@
     - name: install layered package (tree) to create deployment with incompatible flag
       block:
         - name: install tree as layered package via rpm-ostree
-          command: rpm-ostree install tree --reboot
+          command: rpm-ostree install tree
           become: yes
-          ignore_errors: yes
-          ignore_unreachable: yes
 
-        - name: delay 300 seconds for layered package reboot
-          pause:
-            seconds: 300
-          delegate_to: 127.0.0.1
-
-        - name: wait for connection after layered package reboot
-          wait_for_connection:
-            delay: 30
-
-        - name: wait until instance is reachable after layered package reboot
-          wait_for:
-            host: "{{ ansible_all_ipv4_addresses[0] }}"
-            port: 22
-            search_regex: OpenSSH
-            delay: 10
-          register: result_layered_pkg
-          until: result_layered_pkg is success
-          retries: 6
-          delay: 10
+        - name: reboot to apply layered package
+          reboot:
+            reboot_timeout: 600
+            post_reboot_delay: 30
+          become: yes
 
         - name: verify tree was installed as layered package
           command: rpm -q tree
@@ -131,7 +115,6 @@
 
         - assert:
             that:
-              - result_layered_pkg is succeeded
               - result_tree_verify.rc == 0
             fail_msg: "Layered package installation failed"
             success_msg: "Layered package (tree) installed successfully"
