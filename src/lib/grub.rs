@@ -82,13 +82,14 @@ fn unset_boot_counter_at(grub_path: &str) -> Result<()> {
     unset_grub_var("boot_counter", grub_path)
 }
 
-/// sets greenboot_rollback_trigger=1
+/// sets greenboot_rollback_trigger=1 and fallback=1
 pub fn set_rollback_trigger() -> Result<()> {
     set_rollback_trigger_at(GRUB_PATH)
 }
 
 fn set_rollback_trigger_at(grub_path: &str) -> Result<()> {
-    set_grub_var("greenboot_rollback_trigger", 1, grub_path)
+    set_grub_var("greenboot_rollback_trigger", 1, grub_path)?;
+    set_grub_var("fallback", 1, grub_path)
 }
 
 /// unsets greenboot_rollback_trigger
@@ -98,6 +99,46 @@ pub fn unset_rollback_trigger() -> Result<()> {
 
 fn unset_rollback_trigger_at(grub_path: &str) -> Result<()> {
     unset_grub_var("greenboot_rollback_trigger", grub_path)
+}
+
+/// sets fallback=1 for GRUB-level kernel fallback protection
+pub fn set_fallback() -> Result<()> {
+    set_fallback_at(GRUB_PATH)
+}
+
+fn set_fallback_at(grub_path: &str) -> Result<()> {
+    set_grub_var("fallback", 1, grub_path)
+}
+
+/// unsets the fallback grub variable
+pub fn unset_fallback() -> Result<()> {
+    unset_fallback_at(GRUB_PATH)
+}
+
+fn unset_fallback_at(grub_path: &str) -> Result<()> {
+    unset_grub_var("fallback", grub_path)
+}
+
+/// gets fallback value, returns true if set to 1
+pub fn get_fallback() -> Result<bool> {
+    get_fallback_at(GRUB_PATH)
+}
+
+fn get_fallback_at(grub_path: &str) -> Result<bool> {
+    let grub_vars = Command::new("grub2-editenv")
+        .arg(grub_path)
+        .arg("list")
+        .output()
+        .context("Unable to list grubenv variables")?;
+
+    let output = String::from_utf8_lossy(&grub_vars.stdout);
+    for line in output.lines() {
+        if line.starts_with("fallback=") {
+            let value = line.split('=').nth(1).unwrap_or("0");
+            return Ok(value == "1");
+        }
+    }
+    Ok(false)
 }
 
 /// gets greenboot_rollback_trigger value, returns true if set to 1
@@ -159,8 +200,9 @@ fn set_grub_var(key: &str, val: u16, grub_path: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        get_boot_counter_at, get_rollback_trigger_at, set_boot_counter_at, set_rollback_trigger_at,
-        unset_boot_counter_at, unset_rollback_trigger_at,
+        get_boot_counter_at, get_fallback_at, get_rollback_trigger_at, set_boot_counter_at,
+        set_fallback_at, set_rollback_trigger_at, unset_boot_counter_at, unset_fallback_at,
+        unset_rollback_trigger_at,
     };
     use anyhow::Context;
     use std::fs;
@@ -237,35 +279,100 @@ mod tests {
     fn test_rollback_trigger_functions() {
         let (_temp_dir, grubenv) = setup_test_paths();
 
-        // Test when rollback trigger is not set
         assert!(!get_rollback_trigger_at(&grubenv).unwrap());
+        assert!(!get_fallback_at(&grubenv).unwrap());
 
-        // Test setting rollback trigger
         set_rollback_trigger_at(&grubenv).unwrap();
         assert!(get_rollback_trigger_at(&grubenv).unwrap());
+        assert!(get_fallback_at(&grubenv).unwrap());
 
-        // Test unsetting rollback trigger
+        // unset_rollback_trigger only clears the trigger, not fallback
         unset_rollback_trigger_at(&grubenv).unwrap();
         assert!(!get_rollback_trigger_at(&grubenv).unwrap());
+        assert!(get_fallback_at(&grubenv).unwrap());
+
+        // fallback has its own lifecycle, unset independently
+        unset_fallback_at(&grubenv).unwrap();
+        assert!(!get_fallback_at(&grubenv).unwrap());
     }
 
     #[test]
     fn test_rollback_trigger_with_other_vars() {
         let (_temp_dir, grubenv) = setup_test_paths();
 
-        // Set boot counter
         set_boot_counter_at(3, &grubenv).unwrap();
-
-        // Set rollback trigger
         set_rollback_trigger_at(&grubenv).unwrap();
 
-        // Both should coexist
         assert_eq!(get_boot_counter_at(&grubenv).unwrap(), Some(3));
         assert!(get_rollback_trigger_at(&grubenv).unwrap());
+        assert!(get_fallback_at(&grubenv).unwrap());
 
-        // Unset rollback trigger, boot_counter should remain
+        // unset_rollback_trigger leaves boot_counter and fallback intact
         unset_rollback_trigger_at(&grubenv).unwrap();
         assert_eq!(get_boot_counter_at(&grubenv).unwrap(), Some(3));
         assert!(!get_rollback_trigger_at(&grubenv).unwrap());
+        assert!(get_fallback_at(&grubenv).unwrap());
+    }
+
+    #[test]
+    fn test_fallback_set_and_get() {
+        let (_temp_dir, grubenv) = setup_test_paths();
+
+        assert!(!get_fallback_at(&grubenv).unwrap());
+
+        set_fallback_at(&grubenv).unwrap();
+        assert!(get_fallback_at(&grubenv).unwrap());
+    }
+
+    #[test]
+    fn test_fallback_unset() {
+        let (_temp_dir, grubenv) = setup_test_paths();
+
+        set_fallback_at(&grubenv).unwrap();
+        assert!(get_fallback_at(&grubenv).unwrap());
+
+        unset_fallback_at(&grubenv).unwrap();
+        assert!(!get_fallback_at(&grubenv).unwrap());
+    }
+
+    #[test]
+    fn test_fallback_unset_when_not_set() {
+        let (_temp_dir, grubenv) = setup_test_paths();
+
+        unset_fallback_at(&grubenv).unwrap();
+        assert!(!get_fallback_at(&grubenv).unwrap());
+    }
+
+    #[test]
+    fn test_fallback_set_via_rollback_trigger() {
+        let (_temp_dir, grubenv) = setup_test_paths();
+
+        set_rollback_trigger_at(&grubenv).unwrap();
+        assert!(get_fallback_at(&grubenv).unwrap());
+        assert!(get_rollback_trigger_at(&grubenv).unwrap());
+    }
+
+    #[test]
+    fn test_fallback_coexists_with_boot_counter() {
+        let (_temp_dir, grubenv) = setup_test_paths();
+
+        set_boot_counter_at(3, &grubenv).unwrap();
+        set_rollback_trigger_at(&grubenv).unwrap();
+
+        assert_eq!(get_boot_counter_at(&grubenv).unwrap(), Some(3));
+        assert!(get_fallback_at(&grubenv).unwrap());
+        assert!(get_rollback_trigger_at(&grubenv).unwrap());
+    }
+
+    #[test]
+    fn test_fallback_independent_unset() {
+        let (_temp_dir, grubenv) = setup_test_paths();
+
+        set_rollback_trigger_at(&grubenv).unwrap();
+        assert!(get_fallback_at(&grubenv).unwrap());
+
+        unset_fallback_at(&grubenv).unwrap();
+        assert!(!get_fallback_at(&grubenv).unwrap());
+        assert!(get_rollback_trigger_at(&grubenv).unwrap());
     }
 }
