@@ -5,9 +5,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use config::{Config, File, FileFormat};
 use greenboot::detect_os_deployment;
 use greenboot::{
-    get_boot_counter, get_rollback_trigger, handle_motd, handle_reboot, handle_rollback,
-    run_diagnostics, run_green, run_red, set_boot_counter, set_boot_status, set_rollback_trigger,
-    unset_boot_counter, unset_rollback_trigger,
+    get_boot_counter, get_fallback, get_rollback_trigger, handle_motd, handle_reboot,
+    handle_rollback, run_diagnostics, run_green, run_red, set_boot_counter, set_boot_status,
+    set_rollback_trigger, unset_boot_counter, unset_fallback, unset_rollback_trigger,
 };
 use greenboot::{is_boot_rw, remount_boot_ro, remount_boot_rw};
 use std::{process::Command, sync::OnceLock};
@@ -251,7 +251,12 @@ fn health_check() -> Result<()> {
         }
     };
 
-    // Rest of the function remains the same...
+    if !container_mode && get_fallback().unwrap_or(false) {
+        log::info!("Kernel booted successfully, disarming GRUB fallback before healthchecks");
+        with_boot_rw(unset_fallback)
+            .unwrap_or_else(|e| log::error!("Failed to unset GRUB fallback: {e}"));
+    }
+
     handle_motd(&generate_motd_message(
         "Greenboot healthcheck is in progress",
         previous_rollback,
