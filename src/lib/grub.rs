@@ -125,20 +125,7 @@ pub fn get_fallback() -> Result<bool> {
 }
 
 fn get_fallback_at(grub_path: &str) -> Result<bool> {
-    let grub_vars = Command::new("grub2-editenv")
-        .arg(grub_path)
-        .arg("list")
-        .output()
-        .context("Unable to list grubenv variables")?;
-
-    let output = String::from_utf8_lossy(&grub_vars.stdout);
-    for line in output.lines() {
-        if line.starts_with("fallback=") {
-            let value = line.split('=').nth(1).unwrap_or("0");
-            return Ok(value == "1");
-        }
-    }
-    Ok(false)
+    get_grub_bool_var("fallback", grub_path)
 }
 
 /// gets greenboot_rollback_trigger value, returns true if set to 1
@@ -147,30 +134,40 @@ pub fn get_rollback_trigger() -> Result<bool> {
 }
 
 fn get_rollback_trigger_at(grub_path: &str) -> Result<bool> {
+    get_grub_bool_var("greenboot_rollback_trigger", grub_path)
+}
+
+fn get_grub_bool_var(key: &str, grub_path: &str) -> Result<bool> {
     let grub_vars = Command::new("grub2-editenv")
         .arg(grub_path)
         .arg("list")
         .output()
-        .context("Unable to list grubenv variables")?;
+        .context(format!("Unable to list grubenv variables for key: {key}"))?;
 
+    if !grub_vars.status.success() {
+        bail!(
+            "grub2-editenv failed to list variables: {}",
+            String::from_utf8_lossy(&grub_vars.stderr)
+        );
+    }
+
+    let prefix = format!("{key}=");
     let output = String::from_utf8_lossy(&grub_vars.stdout);
     for line in output.lines() {
-        if line.starts_with("greenboot_rollback_trigger=") {
-            let value = line.split('=').nth(1).unwrap_or("0");
+        if let Some(value) = line.strip_prefix(&prefix) {
             return Ok(value == "1");
         }
     }
-    Ok(false) // Not set means false
+    Ok(false)
 }
 
 fn unset_grub_var(key: &str, grub_path: &str) -> Result<()> {
-    // Execute GRUB command and capture result
     let grub_result = Command::new("grub2-editenv")
         .arg(grub_path)
         .arg("unset")
         .arg(key)
         .status()
-        .context("Unable to clear boot_counter")?;
+        .context(format!("Unable to unset grubenv key: {key}"))?;
 
     if !grub_result.success() {
         bail!("Failed to unset grubenv key: {key}");
