@@ -6,6 +6,8 @@ on:
 
 name: Continuous integration
 
+permissions: read-all
+
 jobs:
   check-spelling:
     name: Check spelling
