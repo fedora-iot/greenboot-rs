@@ -40,7 +40,7 @@ case "${ID}-${VERSION_ID}" in
         sudo dnf install -y rpmbuild rust-packaging
         ;;
     "fedora-44")
-        OS_VARIANT="fedora-44"
+        OS_VARIANT="fedora-unknown"
         BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:44"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"

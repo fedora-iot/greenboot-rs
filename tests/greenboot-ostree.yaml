@@ -75,7 +75,58 @@
       shell: findmnt -r -o OPTIONS -n /boot | awk -F "," '{print $1}'
       register: result_boot_mount_before
 
-    # case: check rollback function if boot error found
+    # case: install layered package to reproduce incompatible flag rollback bug
+    - name: verify tree is not already present in base deployment
+      block:
+        - name: check tree is not installed
+          command: rpm -q tree
+          register: result_tree_precheck
+          failed_when: result_tree_precheck.rc == 0
+
+        - assert:
+            that:
+              - result_tree_precheck.rc != 0
+            fail_msg: "tree is already in the base image - pick a different layered package for this test"
+            success_msg: "tree is not in the base image, safe to use as layered package"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    - name: install layered package (tree) to create deployment with incompatible flag
+      block:
+        - name: install tree as layered package via rpm-ostree
+          command: rpm-ostree install tree
+          become: yes
+
+        - name: reboot to apply layered package
+          reboot:
+            reboot_timeout: 600
+            post_reboot_delay: 30
+          become: yes
+
+        - name: verify tree was installed as layered package
+          command: rpm -q tree
+          become: yes
+          register: result_tree_verify
+
+        - assert:
+            that:
+              - result_tree_verify.rc == 0
+            fail_msg: "Layered package installation failed"
+            success_msg: "Layered package (tree) installed successfully"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check rollback function if boot error found (with layered package present)
     - name: install sanely failing health check unit to test red boot status behavior
       block:
         - name: install sanely failing health check unit to test red boot status behavior
@@ -117,6 +168,27 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    # case: verify layered package persists after rollback
+    - name: verify layered package (tree) is present after rollback
+      block:
+        - name: check tree is still installed after rollback
+          command: rpm -q tree
+          register: result_tree_after_rollback
+
+        - assert:
+            that:
+              - result_tree_after_rollback.rc == 0
+            fail_msg: "tree not found after rollback - system rolled back to wrong deployment"
+            success_msg: "tree present after rollback - correct deployment restored"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: result_rollback is defined and result_rollback is succeeded
+
     # case: check fallback log
     - name: fallback log should be found here
       block:
@@ -138,7 +210,7 @@
         - name: failed count + 1
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
-      when: result_rollback is succeeded
+      when: result_rollback is defined and result_rollback is succeeded
 
     # case: check boot-complete.target status
     - name: boot-complete.target should be active
