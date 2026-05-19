@@ -49,7 +49,7 @@ jobs:
         uses: sclorg/testing-farm-as-github-action@v3.1.2
         with:
           compose: CentOS-Stream-10
-          api_key: ${{ secrets.TF_API_KEY }}
+          api_key: ${{ secrets.TF_API_PUB_KEY }}
           git_url: ${{ needs.check-pull-request.outputs.repo_url }}
           git_ref: ${{ needs.check-pull-request.outputs.ref }}
           update_pull_request_status: true
@@ -72,7 +72,7 @@ jobs:
         uses: sclorg/testing-farm-as-github-action@v3.1.2
         with:
           compose: Fedora-44
-          api_key: ${{ secrets.TF_API_KEY }}
+          api_key: ${{ secrets.TF_API_PUB_KEY }}
           git_url: ${{ needs.check-pull-request.outputs.repo_url }}
           git_ref: ${{ needs.check-pull-request.outputs.ref }}
           update_pull_request_status: true
@@ -95,7 +95,7 @@ jobs:
         uses: sclorg/testing-farm-as-github-action@v3.1.2
         with:
           compose: Fedora-Rawhide
-          api_key: ${{ secrets.TF_API_KEY }}
+          api_key: ${{ secrets.TF_API_PUB_KEY }}
           git_url: ${{ needs.check-pull-request.outputs.repo_url }}
           git_ref: ${{ needs.check-pull-request.outputs.ref }}
           update_pull_request_status: true
