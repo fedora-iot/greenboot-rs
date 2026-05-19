@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Query author repository permissions
-        uses: octokit/request-action@v2.x
+        uses: octokit/request-action@v3
         id: user_permission
         with:
           route: GET /repos/${{ github.repository }}/collaborators/${{ github.event.sender.login }}/permission
@@ -25,7 +25,7 @@ jobs:
           echo "allowed_user=true" >> $GITHUB_OUTPUT
 
       - name: Get information for pull request
-        uses: octokit/request-action@v2.x
+        uses: octokit/request-action@v3
         id: pr-api
         with:
           route: GET /repos/${{ github.repository }}/pulls/${{ github.event.number }}
