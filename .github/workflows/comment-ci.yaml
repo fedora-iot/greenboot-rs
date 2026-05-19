@@ -5,6 +5,8 @@ on:
   issue_comment:
     types: [created]
 
+permissions: read-all
+
 jobs:
   check-pull-request:
     runs-on: ubuntu-latest
@@ -12,14 +14,14 @@ jobs:
             (endsWith(github.event.comment.body, '/test')) }}
     steps:
       - name: Get information for pull request
-        uses: octokit/request-action@v2.x
+        uses: octokit/request-action@dad4362715b7fb2ddedf9772c8670824af564f0d # v2.4.0
         id: pr-api
         with:
           route: GET /repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Query author repository permissions
-        uses: octokit/request-action@v2.x
+        uses: octokit/request-action@dad4362715b7fb2ddedf9772c8670824af564f0d # v2.4.0
         id: user_permission
         with:
           route: GET /repos/${{ github.repository }}/collaborators/${{ github.event.sender.login }}/permission
@@ -46,7 +48,7 @@ jobs:
 
     steps:
       - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v3.1.2
+        uses: sclorg/testing-farm-as-github-action@270f0d1d89dad513588fb5cc2cdd512c3459f3fe # v3.1.2
         with:
           compose: CentOS-Stream-10
           api_key: ${{ secrets.TF_API_KEY }}
@@ -69,7 +71,7 @@ jobs:
 
     steps:
       - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v3.1.2
+        uses: sclorg/testing-farm-as-github-action@270f0d1d89dad513588fb5cc2cdd512c3459f3fe # v3.1.2
         with:
           compose: Fedora-44
           api_key: ${{ secrets.TF_API_KEY }}
@@ -92,7 +94,7 @@ jobs:
 
     steps:
       - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v3.1.2
+        uses: sclorg/testing-farm-as-github-action@270f0d1d89dad513588fb5cc2cdd512c3459f3fe # v3.1.2
         with:
           compose: Fedora-Rawhide
           api_key: ${{ secrets.TF_API_KEY }}
@@ -116,7 +118,7 @@ jobs:
 
   #   steps:
   #     - name: Run the tests
-  #       uses: sclorg/testing-farm-as-github-action@v3.1.2
+  #       uses: sclorg/testing-farm-as-github-action@270f0d1d89dad513588fb5cc2cdd512c3459f3fe # v3.1.2
   #       with:
   #         compose: CentOS-Stream-9
   #         api_key: ${{ secrets.TF_API_KEY }}
@@ -140,7 +142,7 @@ jobs:
 
   #   steps:
   #     - name: Run the tests
-  #       uses: sclorg/testing-farm-as-github-action@v3.1.2
+  #       uses: sclorg/testing-farm-as-github-action@270f0d1d89dad513588fb5cc2cdd512c3459f3fe # v3.1.2
   #       with:
   #         compose: RHEL-9.8.0-Nightly
   #         api_key: ${{ secrets.TF_API_KEY }}
@@ -163,7 +165,7 @@ jobs:
 
     steps:
       - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v3.1.2
+        uses: sclorg/testing-farm-as-github-action@270f0d1d89dad513588fb5cc2cdd512c3459f3fe # v3.1.2
         with:
           compose: RHEL-10.2-Nightly
           api_key: ${{ secrets.TF_API_KEY }}
