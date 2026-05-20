@@ -82,25 +82,6 @@ fn unset_boot_counter_at(grub_path: &str) -> Result<()> {
     unset_grub_var("boot_counter", grub_path)
 }
 
-/// sets greenboot_rollback_trigger=1 and fallback=1
-pub fn set_rollback_trigger() -> Result<()> {
-    set_rollback_trigger_at(GRUB_PATH)
-}
-
-fn set_rollback_trigger_at(grub_path: &str) -> Result<()> {
-    set_grub_var("greenboot_rollback_trigger", 1, grub_path)?;
-    set_grub_var("fallback", 1, grub_path)
-}
-
-/// unsets greenboot_rollback_trigger
-pub fn unset_rollback_trigger() -> Result<()> {
-    unset_rollback_trigger_at(GRUB_PATH)
-}
-
-fn unset_rollback_trigger_at(grub_path: &str) -> Result<()> {
-    unset_grub_var("greenboot_rollback_trigger", grub_path)
-}
-
 /// sets fallback=1 for GRUB-level kernel fallback protection
 pub fn set_fallback() -> Result<()> {
     set_fallback_at(GRUB_PATH)
@@ -128,13 +109,31 @@ fn get_fallback_at(grub_path: &str) -> Result<bool> {
     get_grub_bool_var("fallback", grub_path)
 }
 
-/// gets greenboot_rollback_trigger value, returns true if set to 1
-pub fn get_rollback_trigger() -> Result<bool> {
-    get_rollback_trigger_at(GRUB_PATH)
+/// sets greenboot_next_deployment_id to the given deployment ID string
+pub fn set_next_deployment_id(id: &str) -> Result<()> {
+    set_next_deployment_id_at(id, GRUB_PATH)
 }
 
-fn get_rollback_trigger_at(grub_path: &str) -> Result<bool> {
-    get_grub_bool_var("greenboot_rollback_trigger", grub_path)
+fn set_next_deployment_id_at(id: &str, grub_path: &str) -> Result<()> {
+    set_grub_str_var("greenboot_next_deployment_id", id, grub_path)
+}
+
+/// unsets greenboot_next_deployment_id
+pub fn unset_next_deployment_id() -> Result<()> {
+    unset_next_deployment_id_at(GRUB_PATH)
+}
+
+fn unset_next_deployment_id_at(grub_path: &str) -> Result<()> {
+    unset_grub_var("greenboot_next_deployment_id", grub_path)
+}
+
+/// returns the stored deployment ID, or None if not set
+pub fn get_next_deployment_id() -> Result<Option<String>> {
+    get_next_deployment_id_at(GRUB_PATH)
+}
+
+fn get_next_deployment_id_at(grub_path: &str) -> Result<Option<String>> {
+    get_grub_str_var("greenboot_next_deployment_id", grub_path)
 }
 
 fn get_grub_bool_var(key: &str, grub_path: &str) -> Result<bool> {
@@ -194,12 +193,56 @@ fn set_grub_var(key: &str, val: u16, grub_path: &str) -> Result<()> {
     Ok(())
 }
 
+fn set_grub_str_var(key: &str, val: &str, grub_path: &str) -> Result<()> {
+    let grub_result = Command::new("grub2-editenv")
+        .arg(grub_path)
+        .arg("set")
+        .arg(format!("{key}={val}"))
+        .status()
+        .context("Unable to set grubenv")?;
+
+    if !grub_result.success() {
+        bail!("Failed to set grubenv key: {key}");
+    }
+
+    log::info!("Set grubenv: {key}={val}");
+    Ok(())
+}
+
+fn get_grub_str_var(key: &str, grub_path: &str) -> Result<Option<String>> {
+    let grub_vars = Command::new("grub2-editenv")
+        .arg(grub_path)
+        .arg("list")
+        .output()
+        .context(format!("Unable to list grubenv variables for key: {key}"))?;
+
+    if !grub_vars.status.success() {
+        bail!(
+            "grub2-editenv failed to list variables: {}",
+            String::from_utf8_lossy(&grub_vars.stderr)
+        );
+    }
+
+    let prefix = format!("{key}=");
+    let output = String::from_utf8_lossy(&grub_vars.stdout);
+    for line in output.lines() {
+        if let Some(value) = line.strip_prefix(&prefix) {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            return Ok(Some(trimmed.to_string()));
+        }
+    }
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        get_boot_counter_at, get_fallback_at, get_rollback_trigger_at, set_boot_counter_at,
-        set_fallback_at, set_rollback_trigger_at, unset_boot_counter_at, unset_fallback_at,
-        unset_rollback_trigger_at,
+        get_boot_counter_at, get_fallback_at, get_next_deployment_id_at, set_boot_counter_at,
+        set_fallback_at, set_next_deployment_id_at, unset_boot_counter_at, unset_fallback_at,
+        unset_next_deployment_id_at,
     };
     use anyhow::Context;
     use std::fs;
@@ -273,41 +316,66 @@ mod tests {
     }
 
     #[test]
-    fn test_rollback_trigger_functions() {
+    fn test_next_deployment_id_set_and_get() {
         let (_temp_dir, grubenv) = setup_test_paths();
 
-        assert!(!get_rollback_trigger_at(&grubenv).unwrap());
-        assert!(!get_fallback_at(&grubenv).unwrap());
+        assert_eq!(get_next_deployment_id_at(&grubenv).unwrap(), None);
 
-        set_rollback_trigger_at(&grubenv).unwrap();
-        assert!(get_rollback_trigger_at(&grubenv).unwrap());
-        assert!(get_fallback_at(&grubenv).unwrap());
-
-        // unset_rollback_trigger only clears the trigger, not fallback
-        unset_rollback_trigger_at(&grubenv).unwrap();
-        assert!(!get_rollback_trigger_at(&grubenv).unwrap());
-        assert!(get_fallback_at(&grubenv).unwrap());
-
-        // fallback has its own lifecycle, unset independently
-        unset_fallback_at(&grubenv).unwrap();
-        assert!(!get_fallback_at(&grubenv).unwrap());
+        let id = "sha256:abc123def456";
+        set_next_deployment_id_at(id, &grubenv).unwrap();
+        assert_eq!(
+            get_next_deployment_id_at(&grubenv).unwrap(),
+            Some(id.to_string())
+        );
     }
 
     #[test]
-    fn test_rollback_trigger_with_other_vars() {
+    fn test_next_deployment_id_unset() {
         let (_temp_dir, grubenv) = setup_test_paths();
 
+        let id = "sha256:abc123def456";
+        set_next_deployment_id_at(id, &grubenv).unwrap();
+        assert!(get_next_deployment_id_at(&grubenv).unwrap().is_some());
+
+        unset_next_deployment_id_at(&grubenv).unwrap();
+        assert_eq!(get_next_deployment_id_at(&grubenv).unwrap(), None);
+    }
+
+    #[test]
+    fn test_next_deployment_id_coexists_with_boot_counter() {
+        let (_temp_dir, grubenv) = setup_test_paths();
+
+        let id = "sha256:abc123def456";
         set_boot_counter_at(3, &grubenv).unwrap();
-        set_rollback_trigger_at(&grubenv).unwrap();
+        set_next_deployment_id_at(id, &grubenv).unwrap();
 
         assert_eq!(get_boot_counter_at(&grubenv).unwrap(), Some(3));
-        assert!(get_rollback_trigger_at(&grubenv).unwrap());
+        assert_eq!(
+            get_next_deployment_id_at(&grubenv).unwrap(),
+            Some(id.to_string())
+        );
+
+        unset_next_deployment_id_at(&grubenv).unwrap();
+        assert_eq!(get_boot_counter_at(&grubenv).unwrap(), Some(3));
+        assert_eq!(get_next_deployment_id_at(&grubenv).unwrap(), None);
+    }
+
+    #[test]
+    fn test_next_deployment_id_coexists_with_fallback() {
+        let (_temp_dir, grubenv) = setup_test_paths();
+
+        let id = "sha256:abc123def456";
+        set_next_deployment_id_at(id, &grubenv).unwrap();
+        set_fallback_at(&grubenv).unwrap();
+
+        assert_eq!(
+            get_next_deployment_id_at(&grubenv).unwrap(),
+            Some(id.to_string())
+        );
         assert!(get_fallback_at(&grubenv).unwrap());
 
-        // unset_rollback_trigger leaves boot_counter and fallback intact
-        unset_rollback_trigger_at(&grubenv).unwrap();
-        assert_eq!(get_boot_counter_at(&grubenv).unwrap(), Some(3));
-        assert!(!get_rollback_trigger_at(&grubenv).unwrap());
+        unset_next_deployment_id_at(&grubenv).unwrap();
+        assert_eq!(get_next_deployment_id_at(&grubenv).unwrap(), None);
         assert!(get_fallback_at(&grubenv).unwrap());
     }
 
@@ -341,35 +409,29 @@ mod tests {
     }
 
     #[test]
-    fn test_fallback_set_via_rollback_trigger() {
-        let (_temp_dir, grubenv) = setup_test_paths();
-
-        set_rollback_trigger_at(&grubenv).unwrap();
-        assert!(get_fallback_at(&grubenv).unwrap());
-        assert!(get_rollback_trigger_at(&grubenv).unwrap());
-    }
-
-    #[test]
     fn test_fallback_coexists_with_boot_counter() {
         let (_temp_dir, grubenv) = setup_test_paths();
 
         set_boot_counter_at(3, &grubenv).unwrap();
-        set_rollback_trigger_at(&grubenv).unwrap();
+        set_fallback_at(&grubenv).unwrap();
 
         assert_eq!(get_boot_counter_at(&grubenv).unwrap(), Some(3));
         assert!(get_fallback_at(&grubenv).unwrap());
-        assert!(get_rollback_trigger_at(&grubenv).unwrap());
     }
 
     #[test]
-    fn test_fallback_independent_unset() {
+    fn test_fallback_independent_of_deployment_id() {
         let (_temp_dir, grubenv) = setup_test_paths();
 
-        set_rollback_trigger_at(&grubenv).unwrap();
+        let id = "sha256:abc123def456";
+        set_next_deployment_id_at(id, &grubenv).unwrap();
+        set_fallback_at(&grubenv).unwrap();
+
+        unset_next_deployment_id_at(&grubenv).unwrap();
+        assert_eq!(get_next_deployment_id_at(&grubenv).unwrap(), None);
         assert!(get_fallback_at(&grubenv).unwrap());
 
         unset_fallback_at(&grubenv).unwrap();
         assert!(!get_fallback_at(&grubenv).unwrap());
-        assert!(get_rollback_trigger_at(&grubenv).unwrap());
     }
 }
