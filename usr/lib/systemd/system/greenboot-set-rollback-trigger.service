@@ -1,17 +1,15 @@
 [Unit]
 Description=Greenboot Rollback trigger
 DefaultDependencies=no
-After=local-fs.target
-Before=systemd-update-done.service greenboot-healthcheck.service
-Before=sysinit.target shutdown.target
-Conflicts=shutdown.target
-ConditionNeedsUpdate=|/etc
-ConditionNeedsUpdate=|/var
+Before=ostree-finalize-staged.service
+RequiresMountsFor=/boot
+ConditionPathExists=/run/ostree-booted
 
 [Service]
 Type=oneshot
-Restart=no
+RemainAfterExit=yes
 ExecStart=/usr/libexec/greenboot/greenboot set-rollback-trigger
+PrivateMounts=yes
 
 [Install]
-WantedBy=systemd-update-done.service greenboot-healthcheck.service
+RequiredBy=ostree-finalize-staged.service
