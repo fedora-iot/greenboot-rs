@@ -31,6 +31,15 @@ SSH_KEY_PUB=$(cat "${SSH_KEY}".pub)
 EDGE_USER=core
 EDGE_USER_PASSWORD=foobar
 
+# RPM acquisition mode:
+#   If DOWNLOAD_NODE and COMPOSE_ID are both set -> download from compose
+#   Otherwise -> build locally with make rpm (default)
+USE_COMPOSE_RPMS=false
+if [[ -n "${DOWNLOAD_NODE:-}" && -n "${COMPOSE_ID:-}" ]]; then
+    USE_COMPOSE_RPMS=true
+fi
+GREENBOOT_PACKAGES_URL=""
+
 case "${ID}-${VERSION_ID}" in
     "fedora-43")
         OS_VARIANT="fedora-unknown"
@@ -66,7 +75,16 @@ case "${ID}-${VERSION_ID}" in
         BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.8"
         BOOT_ARGS="uefi"
         sudo dnf install -y make rpm-build rust-toolset
-        sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8.repo
+        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
+            { set +x; } 2>/dev/null
+            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${COMPOSE_ID}/compose/AppStream/x86_64/os/Packages/"
+            set -x
+        fi
+        if [[ -n "${DOWNLOAD_NODE:-}" ]]; then
+            { set +x; } 2>/dev/null
+            sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8.repo
+            set -x
+        fi
         ;;
     "rhel-10.2")
         OS_VARIANT="rhel10-unknown"
@@ -74,7 +92,16 @@ case "${ID}-${VERSION_ID}" in
         BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.2"
         BOOT_ARGS="uefi"
         sudo dnf install -y make rpm-build rust-toolset
-        sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-2.repo
+        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
+            { set +x; } 2>/dev/null
+            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-10/composes/RHEL-10/${COMPOSE_ID}/compose/AppStream/x86_64/os/Packages/"
+            set -x
+        fi
+        if [[ -n "${DOWNLOAD_NODE:-}" ]]; then
+            { set +x; } 2>/dev/null
+            sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-2.repo
+            set -x
+        fi
         ;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
@@ -174,17 +201,44 @@ fi
 
 ###########################################################
 ##
-## Build greenboot rpm packages
+## Get greenboot rpm packages
 ##
 ###########################################################
-greenprint "Building greenboot packages"
-pushd .. && \
-make rpm
-cp rpmbuild/RPMS/x86_64/*.rpm tests/
-cp testing_assets/passing_script.sh tests/
-cp testing_assets/passing_binary tests/
-cp testing_assets/failing_script.sh tests/
-cp testing_assets/failing_binary tests/ && popd
+if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
+    { set +x; } 2>/dev/null
+    greenprint "Downloading greenboot RPMs from compose"
+    rm -f greenboot-*.rpm
+
+    GREENBOOT_RPM="$(curl -kfsSL --retry 5 --retry-delay 2 --retry-all-errors \
+        "${GREENBOOT_PACKAGES_URL}" \
+        | grep -oE 'greenboot-[0-9][^"]*\.rpm' \
+        | grep -vE 'debug(info|source)' \
+        | sort -V | tail -n 1)"
+    echo "Selected greenboot RPM: ${GREENBOOT_RPM}"
+
+    GREENBOOT_DEFAULT_RPM="$(curl -kfsSL --retry 5 --retry-delay 2 --retry-all-errors \
+        "${GREENBOOT_PACKAGES_URL}" \
+        | grep -oE 'greenboot-default-health-checks-[0-9][^"]*\.rpm' \
+        | sort -V | tail -n 1)"
+    echo "Selected greenboot-default-health-checks RPM: ${GREENBOOT_DEFAULT_RPM}"
+
+    curl -kfsSL --retry 5 --retry-delay 2 --retry-all-errors \
+        "${GREENBOOT_PACKAGES_URL}${GREENBOOT_RPM}" -o "${GREENBOOT_RPM}"
+    curl -kfsSL --retry 5 --retry-delay 2 --retry-all-errors \
+        "${GREENBOOT_PACKAGES_URL}${GREENBOOT_DEFAULT_RPM}" -o "${GREENBOOT_DEFAULT_RPM}"
+    set -x
+else
+    greenprint "Building greenboot packages with make rpm"
+    pushd ..
+    make rpm
+    cp rpmbuild/RPMS/x86_64/*.rpm tests/
+    popd
+fi
+
+cp ../testing_assets/passing_script.sh .
+cp ../testing_assets/passing_binary .
+cp ../testing_assets/failing_script.sh .
+cp ../testing_assets/failing_binary .
 
 ###########################################################
 ##

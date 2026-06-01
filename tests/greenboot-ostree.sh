@@ -76,6 +76,15 @@ for _ in $(seq 0 30); do
     sleep 10
 done
 
+# RPM acquisition mode:
+#   If DOWNLOAD_NODE and COMPOSE_ID are both set -> download from compose
+#   Otherwise -> build locally with make rpm (default)
+USE_COMPOSE_RPMS=false
+if [[ -n "${DOWNLOAD_NODE:-}" && -n "${COMPOSE_ID:-}" ]]; then
+    USE_COMPOSE_RPMS=true
+fi
+GREENBOOT_PACKAGES_URL=""
+
 # Customize repository
 sudo mkdir -p /etc/osbuild-composer/repositories
 
@@ -93,20 +102,46 @@ case "${ID}-${VERSION_ID}" in
         OS_VARIANT="rhel9-unknown"
         BOOT_ARGS="uefi"
         BOOT_LOCATION="http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/latest-RHEL-9.8.0/compose/BaseOS/x86_64/os/"
+        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
+            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${COMPOSE_ID}/compose/AppStream/x86_64/os/Packages/"
+        fi
         sed "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8-0.json | sudo tee /etc/osbuild-composer/repositories/rhel-98.json > /dev/null;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
         exit 1;;
 esac
 
-# Build greenboot RPMs
-greenprint "Building greenboot packages"
-pushd .. && \
-make rpm
+# Get greenboot RPMs
 mkdir -p /var/www/html/packages
-cp rpmbuild/RPMS/x86_64/*.rpm /var/www/html/packages/
+if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
+    greenprint "Downloading greenboot RPMs from compose: ${GREENBOOT_PACKAGES_URL}"
+
+    GREENBOOT_RPM="$(curl -kfsSL --retry 5 --retry-delay 2 --retry-all-errors \
+        "${GREENBOOT_PACKAGES_URL}" \
+        | grep -oE 'greenboot-[0-9][^"]*\.rpm' \
+        | grep -vE 'debug(info|source)' \
+        | sort -V | tail -n 1)"
+    echo "Selected greenboot RPM: ${GREENBOOT_RPM}"
+
+    GREENBOOT_DEFAULT_RPM="$(curl -kfsSL --retry 5 --retry-delay 2 --retry-all-errors \
+        "${GREENBOOT_PACKAGES_URL}" \
+        | grep -oE 'greenboot-default-health-checks-[0-9][^"]*\.rpm' \
+        | sort -V | tail -n 1)"
+    echo "Selected greenboot-default-health-checks RPM: ${GREENBOOT_DEFAULT_RPM}"
+
+    curl -kfsSL --retry 5 --retry-delay 2 --retry-all-errors \
+        "${GREENBOOT_PACKAGES_URL}${GREENBOOT_RPM}" -o "/var/www/html/packages/${GREENBOOT_RPM}"
+    curl -kfsSL --retry 5 --retry-delay 2 --retry-all-errors \
+        "${GREENBOOT_PACKAGES_URL}${GREENBOOT_DEFAULT_RPM}" -o "/var/www/html/packages/${GREENBOOT_DEFAULT_RPM}"
+else
+    greenprint "Building greenboot packages with make rpm"
+    pushd ..
+    make rpm
+    cp rpmbuild/RPMS/x86_64/*.rpm /var/www/html/packages/
+    popd
+fi
 sudo createrepo_c /var/www/html/packages
-sudo restorecon -Rv /var/www/html/packages && popd
+sudo restorecon -Rv /var/www/html/packages
 
 # Check ostree_key permissions
 KEY_PERMISSION_PRE=$(stat -L -c "%a %G %U" key/ostree_key | grep -oP '\d+' | head -n 1)
