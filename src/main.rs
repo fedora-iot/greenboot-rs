@@ -3,13 +3,13 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use config::{Config, File, FileFormat};
-use greenboot::{detect_os_deployment, get_booted_deployment_id, get_staged_deployment_id};
 use greenboot::{
-    get_boot_counter, get_fallback, get_next_deployment_id, handle_motd, handle_reboot,
-    handle_rollback, run_diagnostics, run_green, run_red, set_boot_counter, set_boot_status,
-    set_fallback, set_next_deployment_id, unset_boot_counter, unset_fallback,
+    RollbackMode, get_boot_counter, get_fallback, get_next_deployment_id, handle_motd,
+    handle_reboot, handle_rollback, run_diagnostics, run_green, run_red, set_boot_counter,
+    set_boot_status, set_fallback, set_next_deployment_id, unset_boot_counter, unset_fallback,
     unset_next_deployment_id,
 };
+use greenboot::{detect_os_deployment, get_booted_deployment_id, get_staged_deployment_id};
 use greenboot::{is_boot_rw, remount_boot_ro, remount_boot_rw};
 use std::{process::Command, sync::OnceLock};
 
@@ -223,7 +223,11 @@ fn check_previous_rollback() -> Result<bool> {
 fn detect_grub_fallback() -> bool {
     let expected_id = match get_next_deployment_id() {
         Ok(Some(id)) => id,
-        _ => return false,
+        Ok(None) => return false,
+        Err(e) => {
+            log::error!("{e}");
+            return false;
+        }
     };
 
     let booted_id = match get_booted_deployment_id() {
@@ -276,39 +280,62 @@ fn health_check() -> Result<()> {
     let mut previous_rollback = false;
 
     if !container_mode {
-        // Detect GRUB-level kernel fallback via deployment ID comparison.
-        // If mismatch, clear next_deployment_id immediately to prevent rollback loop.
-        let grub_fallback = detect_grub_fallback();
-        if grub_fallback {
-            previous_rollback = true;
-            log::info!("GRUB kernel fallback detected - new deployment failed to boot");
-            log::info!(
-                "Making GRUB fallback permanent by rolling back to the currently booted deployment"
-            );
-            match handle_rollback(true) {
-                Ok(()) => {
-                    log::info!("Rollback to previous deployment completed successfully");
-                    with_boot_rw(unset_next_deployment_id)
-                        .unwrap_or_else(|e| log::error!("Failed to clear next-deployment-id: {e}"));
-                }
-                Err(e) => log::error!("Failed to make GRUB fallback permanent: {e}"),
-            }
-        } else if check_previous_rollback().unwrap_or(false) {
-            previous_rollback = true;
-            match detect_os_deployment() {
-                Some(manager) => log::info!(
-                    "FALLBACK BOOT DETECTED! Default {manager} deployment has been rolled back."
-                ),
-                None => log::info!("FALLBACK BOOT DETECTED! Cannot determine the deployment type."),
-            }
+        enum BootState {
+            GrubFallback,
+            PreviousRollback,
+            NormalBoot,
         }
 
-        // Disarm GRUB fallback entry if the kernel booted successfully
-        if get_fallback().unwrap_or(false) {
-            log::info!("Kernel booted successfully, disarming GRUB fallback before healthchecks");
-            with_boot_rw(unset_fallback).unwrap_or_else(|e: anyhow::Error| {
-                log::error!("Failed to unset GRUB fallback: {e}")
-            });
+        let boot_state = if detect_grub_fallback() {
+            BootState::GrubFallback
+        } else if check_previous_rollback().unwrap_or(false) {
+            BootState::PreviousRollback
+        } else {
+            BootState::NormalBoot
+        };
+
+        match boot_state {
+            BootState::GrubFallback => {
+                previous_rollback = true;
+                log::info!("GRUB kernel fallback detected - new deployment failed to boot");
+                log::info!(
+                    "Making GRUB fallback permanent by rolling back to the currently booted deployment"
+                );
+                match handle_rollback(RollbackMode::Forced) {
+                    Ok(()) => {
+                        log::info!("Rollback to previous deployment completed successfully");
+                        with_boot_rw(|| {
+                            unset_next_deployment_id()?;
+                            unset_fallback()
+                        })
+                        .unwrap_or_else(|e| {
+                            log::error!("Failed to clear grub vars after rollback: {e}")
+                        });
+                    }
+                    Err(e) => log::error!("Failed to make GRUB fallback permanent: {e}"),
+                }
+            }
+            BootState::PreviousRollback => {
+                previous_rollback = true;
+                match detect_os_deployment() {
+                    Some(manager) => log::info!(
+                        "FALLBACK BOOT DETECTED! Default {manager} deployment has been rolled back."
+                    ),
+                    None => {
+                        log::info!("FALLBACK BOOT DETECTED! Cannot determine the deployment type.")
+                    }
+                }
+            }
+            BootState::NormalBoot => {
+                if get_fallback().unwrap_or(false) {
+                    log::info!(
+                        "Kernel booted successfully, disarming GRUB fallback before healthchecks"
+                    );
+                    with_boot_rw(unset_fallback).unwrap_or_else(|e: anyhow::Error| {
+                        log::error!("Failed to unset GRUB fallback: {e}")
+                    });
+                }
+            }
         }
     }
 
@@ -374,7 +401,7 @@ fn health_check() -> Result<()> {
                             log::info!(
                                 "Boot counter exhausted and next-deployment-id is set - initiating rollback"
                             );
-                            match handle_rollback(false) {
+                            match handle_rollback(RollbackMode::Normal) {
                                 Ok(()) => {
                                     log::info!("Rollback successful");
                                     with_boot_rw(|| {

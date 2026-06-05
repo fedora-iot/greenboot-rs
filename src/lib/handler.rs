@@ -102,7 +102,7 @@ fn get_rpm_ostree_deployment_id(key: &str) -> Option<String> {
         .ok()?;
 
     if !output.status.success() {
-        log::warn!("Error parsing rpmostree status");
+        log::warn!("Error parsing rpm-ostree status");
         return None;
     }
 
@@ -137,11 +137,19 @@ pub fn handle_reboot(force: bool) -> Result<()> {
     Ok(())
 }
 
-/// Rollback to the previous deployment if the boot counter allows.
-/// When `force` is true, bypass the boot_counter check entirely
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RollbackMode {
+    /// GRUB kernel fallback detected — bypass boot_counter and force rollback immediately.
+    Forced,
+    /// Normal healthcheck-driven rollback — respect boot_counter guard.
+    Normal,
+}
+
+/// `RollbackMode::Forced` bypasses the boot_counter check entirely
 /// (used when GRUB kernel fallback is detected and rollback must be made permanent).
-pub fn handle_rollback(force: bool) -> Result<()> {
-    if !force {
+/// `RollbackMode::Normal` only proceeds if boot_counter has reached zero.
+pub fn handle_rollback(mode: RollbackMode) -> Result<()> {
+    if mode == RollbackMode::Normal {
         let boot_counter = get_boot_counter()?;
 
         match boot_counter {
