@@ -1,14 +1,14 @@
 [Unit]
 Description=Greenboot Rollback trigger
 DefaultDependencies=no
-Before=ostree-finalize-staged.service
+After=ostree-finalize-staged.service
 RequiresMountsFor=/boot
 ConditionPathExists=/run/ostree-booted
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/libexec/greenboot/greenboot set-rollback-trigger
+ExecStop=/usr/libexec/greenboot/greenboot set-rollback-trigger
 PrivateMounts=yes
 
 [Install]
