@@ -492,9 +492,13 @@ fn main() -> Result<()> {
                 return Ok(());
             }
 
-            let deployment_id = get_staged_deployment_id().ok_or_else(|| {
-                anyhow::anyhow!("Failed to get staged deployment ID - is an update staged?")
-            })?;
+            let deployment_id = match get_staged_deployment_id() {
+                Some(id) => id,
+                None => {
+                    log::info!("No staged deployment found; nothing to do.");
+                    return Ok(());
+                }
+            };
 
             log::info!("Setting rollback trigger for deployment: {deployment_id}");
             with_boot_rw(|| {
