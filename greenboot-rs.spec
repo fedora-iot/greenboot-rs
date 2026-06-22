@@ -117,6 +117,7 @@ fi
 %postun -n %{pkgname}
 %systemd_postun greenboot-healthcheck.service
 %systemd_postun greenboot-set-rollback-trigger.service
+%systemd_postun greenboot-success.target
 
 %files -n %{pkgname}
 %license LICENSE LICENSE.dependencies
