@@ -1,3 +1,0 @@
-[Unit]
-Description=GreenBoot Healthcheck Success Target
-Requires=boot-complete.target
