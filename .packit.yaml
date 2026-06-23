@@ -37,6 +37,12 @@ actions:
   - "sed -i '/^%forgeautosetup/d' greenboot-rs.spec"
   - bash -c "git config user.name 'Packit Build' || true"
   - bash -c "git config user.email 'packit@fedoraproject.org' || true"
+  post-modifications:
+  # This runs during propose_downstream to prepare the vendor tarball for upload
+  - bash -c "cargo vendor vendor"
+  - bash -c "tar -cJf greenboot-rs-${PACKIT_PROJECT_VERSION}-vendor-patched.tar.xz vendor"
+  - bash -c "rm -rf vendor"
+  - bash -c 'if [ -n "${PACKIT_DOWNSTREAM_REPO}" ]; then cp greenboot-rs-${PACKIT_PROJECT_VERSION}-vendor-patched.tar.xz ${PACKIT_DOWNSTREAM_REPO}/; fi'
   fix-spec-file:
   # This runs after Packit's release processing - disable debug package to prevent saypaul error
   - "sed -i '/^License:/a\\%global debug_package %{nil}' greenboot-rs.spec"
