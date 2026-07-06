@@ -27,3 +27,8 @@ provision:
   environment+:
     TEST_CASE: ostree-commit
 
+/fedora-iot-raw:
+  summary: Test greenboot with pre-built Fedora IoT raw image
+  environment+:
+    TEST_CASE: fedora-iot-raw
+

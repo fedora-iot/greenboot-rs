@@ -271,6 +271,202 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    # case: kernel failure recovery via GRUB fallback mechanism
+    # Reboot 1: finalize wget deployment to create two clean BLS entries.
+    # Reboot 2: stage sl so set-rollback-trigger fires, corrupt BLS, trigger GRUB fallback.
+    - name: create clean deployment for kernel failure test
+      block:
+        - name: install wget to create a clean deployment
+          command: rpm-ostree install wget
+          become: yes
+
+        - name: reboot to finalize deployment and create two clean BLS entries
+          reboot:
+            reboot_timeout: 600
+            post_reboot_delay: 30
+          become: yes
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    - name: simulate kernel boot failure via corrupted BLS entry
+      block:
+        - name: stage sl so set-rollback-trigger fires on next shutdown
+          command: rpm-ostree install sl
+          become: yes
+
+        - name: identify the higher-version BLS entry (GRUB boots this first)
+          shell: |
+            highest_ver=0
+            highest_file=""
+            for f in /boot/loader/entries/ostree-*.conf; do
+              ver=$(grep '^version ' "$f" | awk '{print $2}')
+              if [ "$ver" -gt "$highest_ver" ]; then
+                highest_ver=$ver
+                highest_file=$f
+              fi
+            done
+            echo "$highest_file"
+          register: result_bls_entry
+          become: yes
+
+        - name: corrupt the kernel path in the higher-version BLS entry
+          shell: sed -i 's|vmlinuz-.*|vmlinuz-does-not-exist|' {{ result_bls_entry.stdout }}
+          become: yes
+
+        - name: reboot to trigger set-rollback-trigger and GRUB fallback
+          reboot:
+            reboot_timeout: 600
+            post_reboot_delay: 60
+          become: yes
+          ignore_errors: yes
+          ignore_unreachable: yes
+
+        - name: delay 120 seconds for GRUB fallback
+          pause:
+            seconds: 120
+          delegate_to: 127.0.0.1
+
+        - name: wait for connection to become reachable
+          wait_for_connection:
+            delay: 30
+
+        - name: wait for SSH to become available after kernel failure recovery
+          wait_for:
+            host: "{{ ansible_all_ipv4_addresses[0] }}"
+            port: 22
+            search_regex: OpenSSH
+            delay: 10
+          register: result_kernel_recovery
+          until: result_kernel_recovery is success
+          retries: 12
+          delay: 10
+
+        - assert:
+            that:
+              - result_kernel_recovery is succeeded
+            fail_msg: "System did not recover from kernel failure"
+            success_msg: "System recovered from kernel failure via GRUB fallback"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check fallback log after kernel failure
+    - name: fallback log should be found after kernel failure recovery
+      block:
+        - name: check greenboot journal for fallback detection
+          command: journalctl -b -0 -u greenboot -u greenboot-healthcheck
+          become: yes
+          register: result_kernel_fallback_log
+
+        - assert:
+            that:
+              - "'GRUB kernel fallback detected' in result_kernel_fallback_log.stdout"
+            fail_msg: "GRUB kernel fallback log not found after kernel failure recovery"
+            success_msg: "Found GRUB kernel fallback log after kernel failure recovery"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: result_kernel_recovery is defined and result_kernel_recovery is succeeded
+
+    # case: verify fallback and rollback trigger cleared from grubenv
+    - name: fallback and greenboot_next_deployment_id should be cleared from grubenv
+      block:
+        - name: check grubenv after kernel failure recovery
+          command: grub2-editenv list
+          register: result_grubenv_kernel
+          become: yes
+
+        - assert:
+            that:
+              - "'fallback' not in result_grubenv_kernel.stdout"
+              - "'greenboot_next_deployment_id' not in result_grubenv_kernel.stdout"
+            fail_msg: "fallback or greenboot_next_deployment_id still present in grubenv"
+            success_msg: "fallback and greenboot_next_deployment_id cleared from grubenv"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: result_kernel_recovery is defined and result_kernel_recovery is succeeded
+
+    # case: check boot-complete.target after kernel failure recovery
+    - name: boot-complete.target should be active after kernel failure recovery
+      block:
+        - name: check boot-complete.target
+          command: systemctl --no-pager status boot-complete.target
+          become: yes
+          register: result_boot_complete_kernel
+          retries: 10
+          delay: 60
+          until: "'inactive' not in result_boot_complete_kernel.stdout"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: result_kernel_recovery is defined and result_kernel_recovery is succeeded
+
+    # case: check grubenv boot_success after kernel failure recovery
+    - name: grubenv should contain boot_success=1 after kernel failure recovery
+      block:
+        - name: check grubenv for boot_success
+          command: grub2-editenv list
+          register: result_grubenv_boot_success_kernel
+          become: yes
+
+        - assert:
+            that:
+              - "'boot_success=1' in result_grubenv_boot_success_kernel.stdout"
+            fail_msg: "Not found boot_success=1 after kernel failure recovery"
+            success_msg: "Found boot_success=1 after kernel failure recovery"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: result_kernel_recovery is defined and result_kernel_recovery is succeeded
+
+    # case: check /boot mount preserved after kernel failure recovery
+    - name: check /boot mount status after kernel failure recovery
+      shell: findmnt -r -o OPTIONS -n /boot | awk -F "," '{print $1}'
+      register: result_boot_mount_after_kernel
+      when: result_kernel_recovery is defined and result_kernel_recovery is succeeded
+
+    - name: /boot status should be preserved after kernel failure recovery
+      block:
+        - assert:
+            that:
+              - result_boot_mount_before.stdout == result_boot_mount_after_kernel.stdout
+            fail_msg: "/boot status is not preserved after kernel failure recovery"
+            success_msg: "/boot status is preserved after kernel failure recovery"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: result_kernel_recovery is defined and result_kernel_recovery is succeeded
+
     - assert:
         that:
           - failed_counter == "0"

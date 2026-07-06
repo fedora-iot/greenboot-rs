@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euox pipefail
 
+ARCH=$(uname -m)
+
 # Dumps details about the instance running the CI job.
 echo -e "\033[0;36m"
 cat << EOF
@@ -30,6 +32,7 @@ SSH_KEY=key/ostree_key
 SSH_KEY_PUB=$(cat "${SSH_KEY}".pub)
 EDGE_USER=core
 EDGE_USER_PASSWORD=foobar
+CONSOLE_LOG=/tmp/vm-console.log
 
 case "${ID}-${VERSION_ID}" in
     "fedora-43")
@@ -37,35 +40,35 @@ case "${ID}-${VERSION_ID}" in
         BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:43"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
-        sudo dnf install -y rpmbuild rust-packaging
+        sudo dnf install -y git make rpm-build rust-toolset
         ;;
     "fedora-44")
         OS_VARIANT="fedora-unknown"
         BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:44"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
-        sudo dnf install -y rpmbuild rust-packaging
+        sudo dnf install -y git make rpm-build rust-toolset
         ;;
     "fedora-45")
         OS_VARIANT="fedora-rawhide"
         BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:rawhide"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
-        sudo dnf install -y rpmbuild rust-packaging
+        sudo dnf install -y git make rpm-build rust-toolset
         ;;
     "centos-10")
         OS_VARIANT="centos-stream9"
         BASE_IMAGE_URL="quay.io/centos-bootc/centos-bootc:stream10"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
-        sudo dnf install -y make rpm-build rust-toolset
+        sudo dnf install -y git make rpm-build rust-toolset
         ;;
     "rhel-9.8")
         OS_VARIANT="rhel9-unknown"
         BASE_IMAGE_URL="registry.stage.redhat.io/rhel9/rhel-bootc:9.8"
         BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.8"
         BOOT_ARGS="uefi"
-        sudo dnf install -y make rpm-build rust-toolset
+        sudo dnf install -y git make rpm-build rust-toolset
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8.repo
         ;;
     "rhel-10.2")
@@ -73,7 +76,7 @@ case "${ID}-${VERSION_ID}" in
         BASE_IMAGE_URL="registry.stage.redhat.io/rhel10/rhel-bootc:10.2"
         BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.2"
         BOOT_ARGS="uefi"
-        sudo dnf install -y make rpm-build rust-toolset
+        sudo dnf install -y git make rpm-build rust-toolset
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-2.repo
         ;;
     *)
@@ -180,11 +183,11 @@ fi
 greenprint "Building greenboot packages"
 pushd .. && \
 make rpm
-cp rpmbuild/RPMS/x86_64/*.rpm tests/
+cp rpmbuild/RPMS/"${ARCH}"/*.rpm tests/
 cp testing_assets/passing_script.sh tests/
-cp testing_assets/passing_binary tests/
+cp testing_assets/passing_binary."${ARCH}" tests/passing_binary
 cp testing_assets/failing_script.sh tests/
-cp testing_assets/failing_binary tests/ && popd
+cp testing_assets/failing_binary."${ARCH}" tests/failing_binary && popd
 
 ###########################################################
 ##
@@ -329,7 +332,8 @@ sudo virt-install  --name="${TEST_UUID}-uefi"\
                    --os-variant ${OS_VARIANT} \
                    --cdrom "/var/lib/libvirt/images/install.iso" \
                    --boot ${BOOT_ARGS} \
-                   --nographics \
+                   --graphics none \
+                   --serial file,path=${CONSOLE_LOG} \
                    --noautoconsole \
                    --wait=-1 \
                    --noreboot
@@ -346,6 +350,14 @@ for _ in $(seq 0 30); do
     fi
     sleep 10
 done
+
+if [[ $RESULTS != 1 ]]; then
+    greenprint "SSH failed — collecting VM diagnostics"
+    sudo virsh domstate "${TEST_UUID}-uefi" || true
+    sudo virsh net-dhcp-leases integration || true
+    greenprint "VM console output (last 100 lines):"
+    sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
+fi
 check_result
 
 ###########################################################
@@ -386,6 +398,14 @@ for _ in $(seq 0 30); do
     fi
     sleep 10
 done
+
+if [[ $RESULTS != 1 ]]; then
+    greenprint "SSH failed after upgrade — collecting VM diagnostics"
+    sudo virsh domstate "${TEST_UUID}-uefi" || true
+    sudo virsh net-dhcp-leases integration || true
+    greenprint "VM console output (last 100 lines):"
+    sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
+fi
 check_result
 
 # Add instance IP address into /etc/ansible/hosts

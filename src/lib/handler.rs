@@ -52,6 +52,78 @@ pub fn detect_os_deployment() -> Option<&'static str> {
     }
 }
 
+/// Returns the deployment ID of the currently booted deployment, or None
+/// if not on an ostree-based system or if the query fails.
+pub fn get_booted_deployment_id() -> Option<String> {
+    match detect_os_deployment() {
+        Some("bootc") => get_bootc_deployment_id("booted"),
+        Some("rpm-ostree") => get_rpm_ostree_deployment_id("booted"),
+        _ => None,
+    }
+}
+
+/// Returns the deployment ID of the staged (pending) deployment, or None
+/// if not on an ostree-based system or if no deployment is staged.
+pub fn get_staged_deployment_id() -> Option<String> {
+    match detect_os_deployment() {
+        Some("bootc") => get_bootc_deployment_id("staged"),
+        Some("rpm-ostree") => get_rpm_ostree_deployment_id("staged"),
+        _ => None,
+    }
+}
+
+fn get_bootc_deployment_id(key: &str) -> Option<String> {
+    let mut args = vec!["status", "--json"];
+    if key == "booted" {
+        args.insert(1, "--booted");
+    }
+
+    let output = Command::new("bootc").args(&args).output().ok()?;
+
+    if !output.status.success() {
+        log::warn!("Error parsing bootc status");
+        return None;
+    }
+
+    let json: Value = serde_json::from_slice(&output.stdout).ok()?;
+
+    json.get("status")
+        .and_then(|s| s.get(key))
+        .and_then(|d| d.get("image"))
+        .and_then(|i| i.get("imageDigest"))
+        .and_then(|d| d.as_str())
+        .map(|s| s.to_string())
+}
+
+fn get_rpm_ostree_deployment_id(key: &str) -> Option<String> {
+    let output = Command::new("rpm-ostree")
+        .args(["status", "--json"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        log::warn!("Error parsing rpm-ostree status");
+        return None;
+    }
+
+    let json: Value = serde_json::from_slice(&output.stdout).ok()?;
+    let deployments = json.get("deployments")?.as_array()?;
+
+    for deployment in deployments {
+        if deployment
+            .get(key)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            return deployment
+                .get("checksum")
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string());
+        }
+    }
+    None
+}
+
 /// reboots the system if boot_counter is greater than 0 or can be forced too
 pub fn handle_reboot(force: bool) -> Result<()> {
     if !force {
@@ -65,40 +137,53 @@ pub fn handle_reboot(force: bool) -> Result<()> {
     Ok(())
 }
 
-/// Rollback to the previous deployment if the boot counter allows.
-pub fn handle_rollback() -> Result<()> {
-    let boot_counter = get_boot_counter()?;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RollbackMode {
+    /// GRUB kernel fallback detected — bypass boot_counter and force rollback immediately.
+    Forced,
+    /// Normal healthcheck-driven rollback — respect boot_counter guard.
+    Normal,
+}
 
-    match boot_counter {
-        // Exit early if boot_counter is not set
-        None => {
-            bail!("System is unhealthy but boot_counter is not set, manual intervention required")
-        }
-        // Proceed with rollback if boot_counter is <= 0
-        Some(counter) if counter <= 0 => {
-            log::info!("Greenboot will now attempt to rollback to a previous deployment.");
-            if let Some(deployment_cmd) = detect_os_deployment() {
-                log::info!("Deployment manager '{deployment_cmd}' detected, attempting rollback.");
-                let status = Command::new(deployment_cmd)
-                    .arg("rollback")
-                    .status()
-                    .context(format!("Failed to execute '{deployment_cmd} rollback'"))?;
+/// `RollbackMode::Forced` bypasses the boot_counter check entirely
+/// (used when GRUB kernel fallback is detected and rollback must be made permanent).
+/// `RollbackMode::Normal` only proceeds if boot_counter has reached zero.
+pub fn handle_rollback(mode: RollbackMode) -> Result<()> {
+    if mode == RollbackMode::Normal {
+        let boot_counter = get_boot_counter()?;
 
-                if !status.success() {
-                    bail!(
-                        "Rollback with '{}' failed with status: {}",
-                        deployment_cmd,
-                        status
-                    );
-                }
-            } else {
-                bail!("Rollback only supported in bootc or rpm-ostree environment.");
+        match boot_counter {
+            None => {
+                bail!(
+                    "System is unhealthy but boot_counter is not set, manual intervention required"
+                )
             }
-            Ok(())
+            Some(counter) if counter > 0 => {
+                bail!("Rollback not initiated as boot_counter is {}", counter)
+            }
+            _ => {}
         }
-        // Reject if boot_counter is > 0
-        Some(counter) => bail!("Rollback not initiated as boot_counter is {}", counter),
     }
+
+    log::info!("Greenboot will now attempt to rollback to a previous deployment.");
+    if let Some(deployment_cmd) = detect_os_deployment() {
+        log::info!("Deployment manager '{deployment_cmd}' detected, attempting rollback.");
+        let status = Command::new(deployment_cmd)
+            .arg("rollback")
+            .status()
+            .context(format!("Failed to execute '{deployment_cmd} rollback'"))?;
+
+        if !status.success() {
+            bail!(
+                "Rollback with '{}' failed with status: {}",
+                deployment_cmd,
+                status
+            );
+        }
+    } else {
+        bail!("Rollback only supported in bootc or rpm-ostree environment.");
+    }
+    Ok(())
 }
 
 /// writes greenboot status to motd.d/boot-status

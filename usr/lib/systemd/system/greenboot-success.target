@@ -2,6 +2,3 @@
 Description=GreenBoot Healthcheck Success Target
 After=greenboot-healthcheck.service
 Requires=boot-complete.target
-
-[Install]
-WantedBy=multi-user.target

@@ -44,6 +44,7 @@ SSH_USER="admin"
 OS_NAME="rhel-edge"
 IMAGE_TYPE=edge-commit
 PROD_REPO_URL=http://192.168.100.1/repo
+CONSOLE_LOG=/tmp/vm-console.log
 
 # Set up temporary files.
 TEMPDIR=$(mktemp -d)
@@ -64,7 +65,7 @@ sudo localectl set-locale LANG=en_US.UTF-8
 
 # Install required packages
 greenprint "Install required packages"
-sudo dnf install -y --nogpgcheck httpd osbuild osbuild-composer composer-cli ansible-core createrepo_c podman qemu-img firewalld qemu-kvm libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install rpmdevtools cargo lorax gobject-introspection make rpm-build rust-toolset
+sudo dnf install -y --nogpgcheck httpd osbuild osbuild-composer composer-cli ansible-core createrepo_c podman qemu-img firewalld qemu-kvm libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install rpmdevtools cargo lorax gobject-introspection git make rpm-build rust-toolset
 
 # Avoid collection installation filed sometime
 for _ in $(seq 0 30); do
@@ -86,13 +87,13 @@ case "${ID}-${VERSION_ID}" in
         OS_VARIANT="centos-stream9"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
         CURRENT_COMPOSE_CS9=$(curl -s "https://composes.stream.centos.org/production/" | grep -ioE ">CentOS-Stream-9-.*/<" | tr -d '>/<' | tail -1)
-        BOOT_LOCATION="https://composes.stream.centos.org/production/${CURRENT_COMPOSE_CS9}/compose/BaseOS/x86_64/os/"
+        BOOT_LOCATION="https://composes.stream.centos.org/production/${CURRENT_COMPOSE_CS9}/compose/BaseOS/${ARCH}/os/"
         sudo cp files/centos-stream-9.json /etc/osbuild-composer/repositories/centos-9.json;;
     "rhel-9.8")
         OSTREE_REF="rhel/9/${ARCH}/edge"
         OS_VARIANT="rhel9-unknown"
         BOOT_ARGS="uefi"
-        BOOT_LOCATION="http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/latest-RHEL-9.8.0/compose/BaseOS/x86_64/os/"
+        BOOT_LOCATION="http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/latest-RHEL-9.8.0/compose/BaseOS/${ARCH}/os/"
         sed "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8-0.json | sudo tee /etc/osbuild-composer/repositories/rhel-98.json > /dev/null;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
@@ -104,7 +105,7 @@ greenprint "Building greenboot packages"
 pushd .. && \
 make rpm
 mkdir -p /var/www/html/packages
-cp rpmbuild/RPMS/x86_64/*.rpm /var/www/html/packages/
+cp rpmbuild/RPMS/"${ARCH}"/*.rpm /var/www/html/packages/
 sudo createrepo_c /var/www/html/packages
 sudo restorecon -Rv /var/www/html/packages && popd
 
@@ -326,7 +327,7 @@ name = "sssd"
 version = "*"
 
 [customizations.services]
-enabled = ["greenboot-set-rollback-trigger.service", "greenboot-success.target"]
+enabled = ["greenboot-healthcheck.service", "greenboot-set-rollback-trigger.service"]
 
 [[customizations.user]]
 name = "${SSH_USER}"
@@ -391,7 +392,8 @@ sudo virt-install  --name="${IMAGE_KEY}"\
                    --os-variant ${OS_VARIANT} \
                    --boot ${BOOT_ARGS} \
                    --location "${BOOT_LOCATION}" \
-                   --nographics \
+                   --graphics none \
+                   --serial file,path=${CONSOLE_LOG} \
                    --noautoconsole \
                    --wait=-1 \
                    --noreboot
@@ -411,14 +413,23 @@ for _ in $(seq 0 30); do
     sleep 10
 done
 
+if [[ $RESULTS != 1 ]]; then
+    greenprint "SSH failed — collecting VM diagnostics"
+    sudo virsh domstate "${IMAGE_KEY}" || true
+    sudo virsh net-dhcp-leases integration || true
+    greenprint "VM console output (last 100 lines):"
+    sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
+fi
+check_result
+
 greenprint "🛃 Copying binary and script files to edge vm"
 
 # Create red.d and green.d directories if they don't exist
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo mkdir -p /etc/greenboot/red.d /etc/greenboot/green.d"
 
 # Copy all files to temp directory first (all at once)
-scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_binary "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
-scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_binary "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
+scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_binary."${ARCH}" "${SSH_USER}@${GUEST_ADDRESS}":/tmp/failing_binary && \
+scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_binary."${ARCH}" "${SSH_USER}@${GUEST_ADDRESS}":/tmp/passing_binary && \
 scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_script.sh "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
 scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_script.sh "${SSH_USER}@${GUEST_ADDRESS}":/tmp/
 

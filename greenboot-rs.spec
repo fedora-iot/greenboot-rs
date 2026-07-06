@@ -103,17 +103,14 @@ install -DpZm 0644 usr/lib/systemd/system/greenboot-healthcheck.service.d/10-net
 %post -n %{pkgname}
 %systemd_post greenboot-healthcheck.service
 %systemd_post greenboot-set-rollback-trigger.service
-%systemd_post greenboot-success.target
 
 %preun -n %{pkgname}
 %systemd_preun greenboot-healthcheck.service
 %systemd_preun greenboot-set-rollback-trigger.service
-%systemd_preun greenboot-success.target
 
 %postun -n %{pkgname}
 %systemd_postun greenboot-healthcheck.service
 %systemd_postun greenboot-set-rollback-trigger.service
-%systemd_postun greenboot-success.target
 
 %files -n %{pkgname}
 %license LICENSE LICENSE.dependencies

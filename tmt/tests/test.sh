@@ -10,6 +10,8 @@ function run_tests() {
 		./greenboot-bootc-anaconda-iso.sh
 	elif [ "$TEST_CASE" = "ostree-commit" ]; then
 		./greenboot-ostree.sh
+	elif [ "$TEST_CASE" = "fedora-iot-raw" ]; then
+		./greenboot-fedora-iot-raw.sh
 	else
 		echo "Error: Test case $TEST_CASE not found!"
 		exit 1
