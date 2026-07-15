@@ -1,195 +1,155 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
-use log::{info, warn};
+#[cfg(not(feature = "test-remount"))]
+use log::info;
+#[cfg(not(feature = "test-remount"))]
 use std::fs;
 use std::path::Path;
 #[cfg(not(feature = "test-remount"))]
 use std::process::{Command, Stdio};
 use thiserror::Error;
 
-/// Shared path to mount info used by default helpers
-static MOUNT_INFO_PATH: &str = "/proc/mounts";
-
 #[derive(Debug, Error)]
 pub enum MountError {
     #[error("Failed to remount /boot: {0}")]
     RemountFailed(String),
-    #[error("Failed to read mount info")]
-    MountInfoError,
+    #[error("Failed to create mount namespace: {0}")]
+    NamespaceError(String),
+    #[error("Failed to check /boot writable state: {0}")]
+    BootCheckError(String),
 }
 
-fn is_boot_rw_at(mounts_path: &Path) -> Result<bool, MountError> {
-    let mounts = fs::read_to_string(mounts_path).map_err(|_| MountError::MountInfoError)?;
-    for line in mounts.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 4 && parts.get(1) == Some(&"/boot") {
-            let options = parts[3];
-            return Ok(options.contains("rw") && !options.contains("ro"));
-        }
-    }
-    Err(MountError::MountInfoError)
-}
-
-/// Default helper: check /boot RW state using shared MOUNT_INFO_PATH
-pub fn is_boot_rw() -> Result<bool, MountError> {
-    is_boot_rw_at(Path::new(MOUNT_INFO_PATH))
-}
-
+/// Check if the process is already in a private mount namespace by comparing
+/// the mount namespace of PID 1 with the current process.
 #[cfg(not(feature = "test-remount"))]
-fn remount_boot_ro_at(mounts_path: &Path) -> Result<(), MountError> {
-    match is_boot_rw_at(mounts_path)? {
-        true => {
-            let output = Command::new("mount")
-                .arg("-o")
-                .arg("remount,bind,ro")
-                .arg("/boot")
-                .stderr(Stdio::piped()) // Capture stderr for error handling
-                .output();
+fn is_in_private_namespace() -> Result<bool, MountError> {
+    let pid1_ns = fs::read_link("/proc/1/ns/mnt")
+        .map_err(|e| MountError::NamespaceError(format!("Failed to read /proc/1/ns/mnt: {e}")))?;
+    let self_ns = fs::read_link("/proc/self/ns/mnt").map_err(|e| {
+        MountError::NamespaceError(format!("Failed to read /proc/self/ns/mnt: {e}"))
+    })?;
+    Ok(pid1_ns != self_ns)
+}
 
-            match output {
-                Ok(output) => {
-                    if output.status.success() {
-                        Ok(())
-                    } else {
-                        let error_message = String::from_utf8_lossy(&output.stderr);
-                        warn!("Failed to remount /boot as RO using shell: {error_message}");
-                        Err(MountError::RemountFailed(error_message.to_string()))
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to execute mount command: {e}");
-                    Err(MountError::RemountFailed(format!(
-                        "Failed to execute mount: {e}"
-                    )))
-                }
-            }
-        }
-        false => {
-            info!("/boot is already read-only");
-            Ok(())
-        }
+/// Ensure the process is running inside a private mount namespace.
+/// If already in a private namespace (e.g. via systemd PrivateMounts=yes), this is a no-op.
+/// Otherwise, calls unshare(CLONE_NEWNS) to create one.
+#[cfg(not(feature = "test-remount"))]
+pub fn ensure_mount_namespace() -> Result<(), MountError> {
+    if is_in_private_namespace()? {
+        info!("Already in a private mount namespace; skipping unshare");
+        return Ok(());
+    }
+    info!("Not in a private mount namespace; creating one via unshare(CLONE_NEWNS)");
+    nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWNS).map_err(|e| {
+        MountError::NamespaceError(format!("Failed to create mount namespace: {e}"))
+    })?;
+    info!("Mount namespace created successfully");
+    Ok(())
+}
+
+#[cfg(feature = "test-remount")]
+pub fn ensure_mount_namespace() -> Result<(), MountError> {
+    Ok(())
+}
+
+/// Check if a path is writable using POSIX access(2) with W_OK.
+/// This correctly detects read-only mounts, unlike metadata mode bits
+/// which only reflect inode permissions. Equivalent to shell `test -w`.
+fn is_path_writable_at(path: &Path) -> Result<bool, MountError> {
+    match nix::unistd::access(path, nix::unistd::AccessFlags::W_OK) {
+        Ok(()) => Ok(true),
+        Err(nix::errno::Errno::EACCES | nix::errno::Errno::EROFS) => Ok(false),
+        Err(e) => Err(MountError::BootCheckError(format!(
+            "{}: {e}",
+            path.display()
+        ))),
     }
 }
 
-#[cfg(not(feature = "test-remount"))]
-fn remount_boot_rw_at(mounts_path: &Path) -> Result<(), MountError> {
-    match is_boot_rw_at(mounts_path)? {
-        false => {
-            let output = Command::new("mount")
-                .arg("-o")
-                .arg("remount,rw")
-                .arg("/boot")
-                .stderr(Stdio::piped()) // Capture stderr for error handling
-                .output();
-
-            match output {
-                Ok(output) => {
-                    if output.status.success() {
-                        Ok(())
-                    } else {
-                        let error_message = String::from_utf8_lossy(&output.stderr);
-                        warn!("Failed to remount /boot as RW using shell: {error_message}");
-                        Err(MountError::RemountFailed(error_message.to_string()))
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to execute mount command: {e}");
-                    Err(MountError::RemountFailed(format!(
-                        "Failed to execute mount: {e}"
-                    )))
-                }
-            }
-        }
-        true => {
-            info!("/boot is already read-write");
-            Ok(())
-        }
-    }
+/// Check if /boot is currently writable.
+pub fn is_boot_writable() -> Result<bool, MountError> {
+    is_boot_writable_at(Path::new("/boot"))
 }
 
-/// Default helper: remount /boot RO using shared MOUNT_INFO_PATH
-#[cfg(not(feature = "test-remount"))]
-pub fn remount_boot_ro() -> Result<(), MountError> {
-    remount_boot_ro_at(Path::new(MOUNT_INFO_PATH))
+/// Check if a given path is currently writable. Testable variant of `is_boot_writable`.
+pub fn is_boot_writable_at(path: &Path) -> Result<bool, MountError> {
+    is_path_writable_at(path)
 }
 
-/// Default helper: remount /boot RW using shared MOUNT_INFO_PATH
+/// Remount /boot as read-write. With mount namespaces, there is no need to
+/// restore read-only state afterward — the namespace handles cleanup on exit.
 #[cfg(not(feature = "test-remount"))]
 pub fn remount_boot_rw() -> Result<(), MountError> {
-    remount_boot_rw_at(Path::new(MOUNT_INFO_PATH))
+    if is_boot_writable()? {
+        info!("/boot is already writable; no remount needed");
+        return Ok(());
+    }
+
+    info!("Remounting /boot as read-write");
+    let output = Command::new("mount")
+        .arg("-o")
+        .arg("remount,rw")
+        .arg("/boot")
+        .stderr(Stdio::piped())
+        .output();
+
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                Ok(())
+            } else {
+                let error_message = String::from_utf8_lossy(&output.stderr);
+                Err(MountError::RemountFailed(error_message.to_string()))
+            }
+        }
+        Err(e) => Err(MountError::RemountFailed(format!(
+            "Failed to execute mount: {e}"
+        ))),
+    }
 }
 
-/// For testing without actually remounting /mount
-#[cfg(feature = "test-remount")]
-fn remount_boot_rw_at(_mounts_path: &Path) -> Result<(), MountError> {
-    Ok(())
-}
-/// For testing without actually remounting /mount
-#[cfg(feature = "test-remount")]
-fn remount_boot_ro_at(_mounts_path: &Path) -> Result<(), MountError> {
-    Ok(())
-}
-
-/// For testing feature: default helpers no-op
 #[cfg(feature = "test-remount")]
 pub fn remount_boot_rw() -> Result<(), MountError> {
-    Ok(())
-}
-#[cfg(feature = "test-remount")]
-pub fn remount_boot_ro() -> Result<(), MountError> {
     Ok(())
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
 
-    fn create_mock_file(content: &str) -> std::path::PathBuf {
+    #[test]
+    fn test_is_boot_writable_at_on_writable_dir() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("mounts");
-        std::fs::write(&path, content).unwrap();
-        Box::leak(Box::new(dir));
-        path
-    }
-
-    #[cfg(not(feature = "test-remount"))]
-    #[test]
-    fn test_remount_boot_ro_when_already_ro() {
-        let mounts_content = "rootfs / rootfs rw 0 0\n\
-                             none /boot tmpfs ro 0 0\n";
-        let mounts_path = create_mock_file(mounts_content);
-
-        let result = remount_boot_ro_at(&mounts_path);
-        assert!(result.is_ok());
-    }
-
-    #[cfg(not(feature = "test-remount"))]
-    #[test]
-    fn test_remount_boot_rw_when_already_rw() {
-        let mounts_content = "rootfs / rootfs rw 0 0\n\
-                             none /boot tmpfs rw 0 0\n";
-        let mounts_path = create_mock_file(mounts_content);
-
-        let result = remount_boot_rw_at(&mounts_path);
-        assert!(result.is_ok());
+        assert!(is_boot_writable_at(dir.path()).unwrap());
     }
 
     #[test]
-    fn test_is_boot_rw_detection() {
-        // Test RW case - should return true
-        let rw_path = create_mock_file("device /boot ext4 rw,relatime 0 0");
-        assert!(is_boot_rw_at(&rw_path).unwrap());
+    fn test_is_boot_writable_at_on_readonly_dir() {
+        if nix::unistd::geteuid().is_root() {
+            eprintln!("Skipping: root bypasses permission bits in access(W_OK)");
+            return;
+        }
 
-        // Test RO case - should return false
-        let ro_path = create_mock_file("device /boot ext4 ro,relatime 0 0");
-        assert!(!is_boot_rw_at(&ro_path).unwrap());
+        let dir = tempfile::tempdir().unwrap();
+        let mut perms = fs::metadata(dir.path()).unwrap().permissions();
+        perms.set_mode(0o555);
+        fs::set_permissions(dir.path(), perms).unwrap();
 
-        // Test missing /boot - should error
-        let missing_path = create_mock_file("device /other ext4 rw 0 0");
-        assert!(is_boot_rw_at(&missing_path).is_err());
+        assert!(!is_boot_writable_at(dir.path()).unwrap());
 
-        // Test malformed line - should error
-        let malformed_path = create_mock_file("incomplete fields");
-        assert!(is_boot_rw_at(&malformed_path).is_err());
+        let mut perms = fs::metadata(dir.path()).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(dir.path(), perms).unwrap();
+    }
+
+    #[test]
+    fn test_is_boot_writable_at_nonexistent_path() {
+        let result = is_boot_writable_at(Path::new("/nonexistent/path/boot"));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("/nonexistent/path/boot"));
     }
 }

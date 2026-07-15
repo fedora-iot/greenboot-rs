@@ -7,11 +7,13 @@ Before=sysinit.target shutdown.target
 Conflicts=shutdown.target
 ConditionNeedsUpdate=|/etc
 ConditionNeedsUpdate=|/var
+RequiresMountsFor=/boot
 
 [Service]
 Type=oneshot
 Restart=no
 ExecStart=/usr/libexec/greenboot/greenboot set-rollback-trigger
+PrivateMounts=yes
 
 [Install]
 WantedBy=systemd-update-done.service greenboot-healthcheck.service

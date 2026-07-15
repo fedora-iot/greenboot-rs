@@ -4,12 +4,12 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use config::{Config, File, FileFormat};
 use greenboot::detect_os_deployment;
+use greenboot::{ensure_mount_namespace, remount_boot_rw};
 use greenboot::{
     get_boot_counter, get_rollback_trigger, handle_motd, handle_reboot, handle_rollback,
     run_diagnostics, run_green, run_red, set_boot_counter, set_boot_status, set_rollback_trigger,
     unset_boot_counter, unset_rollback_trigger,
 };
-use greenboot::{is_boot_rw, remount_boot_ro, remount_boot_rw};
 use std::{process::Command, sync::OnceLock};
 
 /// greenboot config path
@@ -128,7 +128,9 @@ fn running_in_container() -> bool {
     })
 }
 
-/// Execute a mutating GRUB operation while ensuring /boot is temporarily remounted RW if needed
+/// Execute a mutating GRUB operation, remounting /boot as RW if needed.
+/// With mount namespaces, no read-only restore is necessary — the namespace
+/// handles cleanup automatically when the process exits.
 fn with_boot_rw<F>(f: F) -> Result<()>
 where
     F: FnOnce() -> Result<()>,
@@ -138,29 +140,8 @@ where
         return f();
     }
 
-    let was_rw =
-        is_boot_rw().map_err(|e| anyhow::anyhow!("Failed to check boot mount state: {}", e))?;
-
-    log::info!(
-        "Initial /boot mount state: {}",
-        if was_rw { "rw" } else { "ro" }
-    );
-
-    if !was_rw {
-        log::info!("Remounting /boot as rw for operation");
-        remount_boot_rw().context("Failed to remount /boot as rw")?;
-    } else {
-        log::info!("/boot is already rw; no remount needed");
-    }
-
-    let op_result = f();
-
-    if !was_rw {
-        log::info!("Restoring /boot mount to ro");
-        remount_boot_ro().context("Failed to remount /boot as ro")?;
-    }
-
-    op_result
+    remount_boot_rw().context("Failed to remount /boot as rw")?;
+    f()
 }
 
 /// Check if greenboot-rollback.service successfully ran in the previous boot
@@ -397,6 +378,12 @@ fn main() -> Result<()> {
     pretty_env_logger::formatted_builder()
         .filter_level(cli.log_level.to_log())
         .init();
+
+    if !running_in_container() {
+        ensure_mount_namespace().context("Failed to set up mount namespace")?;
+    } else {
+        log::info!("Container environment detected; skipping mount namespace setup");
+    }
 
     match cli.command {
         Commands::HealthCheck => health_check(),
