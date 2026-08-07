@@ -59,7 +59,8 @@ jobs:
 
       - name: Build RPMs
         run: |
-          dnf install -y git make rpm-build rust-toolset
+          dnf install -y git make rpm-build dnf-plugins-core
+          dnf builddep -y greenboot-rs.spec
           make rpm
 
       - name: Verify RPMs were created
