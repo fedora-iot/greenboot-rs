@@ -308,9 +308,21 @@ if [[ $copr_result != 0 ]]; then
     exit 1
 fi
 
+# Listing greenboot/greenboot-default-health-checks by name isn't enough to
+# guarantee the Copr build gets picked: dnf always resolves to the highest
+# NEVRA across all enabled repos, and Copr snapshot builds conventionally use
+# a Release starting at "0.<timestamp>...", the same convention official
+# pre-GA/rebuilt packages use. Whenever BaseOS/AppStream/Fedora ships a
+# greenboot release that outranks the current Copr build, an unscoped
+# download would silently fetch the stock package instead. Restrict
+# resolution to just the just-enabled Copr repo so there is only one
+# candidate regardless of what other repos offer (see commit eb7d75c, which
+# fixed the same class of bug for the ostree/osbuild-composer flow).
+GREENBOOT_COPR_REPO_ID="copr:copr.fedorainfracloud.org:packit:fedora-iot-greenboot-rs-${PR_NUMBER}"
+
 greenprint "📦 Downloading greenboot RPMs from Copr"
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
-    "dnf download --destdir /tmp/greenboot-rpms greenboot greenboot-default-health-checks"
+    "dnf download --from-repo='${GREENBOOT_COPR_REPO_ID}' --destdir /tmp/greenboot-rpms greenboot greenboot-default-health-checks"
 
 greenprint "📦 Replacing greenboot packages with PR build"
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
