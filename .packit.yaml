@@ -59,6 +59,8 @@ jobs:
   - fedora-44-x86_64
   - fedora-development-aarch64
   - fedora-development
+  - fedora-rawhide-aarch64
+  - fedora-rawhide
   - fedora-eln-aarch64
   - fedora-eln
 
