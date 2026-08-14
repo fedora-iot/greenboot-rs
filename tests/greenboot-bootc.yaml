@@ -141,6 +141,49 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    # case: verify GRUB fallback disarmed on first boot of upgraded deployment
+    - name: verify GRUB fallback disarmed after successful kernel boot
+      block:
+        - name: check healthcheck log across all boots for fallback disarm
+          command: journalctl -u greenboot-healthcheck.service --no-pager
+          become: yes
+          register: result_fallback_disarm
+
+        - assert:
+            that:
+              - "'Kernel booted successfully, disarming GRUB fallback before healthchecks' in result_fallback_disarm.stdout"
+            fail_msg: "GRUB fallback was never disarmed after a successful kernel boot"
+            success_msg: "GRUB fallback correctly disarmed after successful kernel boot"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: verify boot-counter-exhausted rollback uses next-deployment-id
+    - name: verify next-deployment-id based rollback triggered on boot counter exhaustion
+      block:
+        - name: check healthcheck log across all boots for rollback trigger
+          command: journalctl -u greenboot-healthcheck.service --no-pager
+          become: yes
+          register: result_rollback_trigger
+
+        - assert:
+            that:
+              - "'Boot counter exhausted and next-deployment-id is set - initiating rollback' in result_rollback_trigger.stdout"
+              - "'Rollback successful' in result_rollback_trigger.stdout"
+            fail_msg: "next-deployment-id based rollback not found in healthcheck logs"
+            success_msg: "next-deployment-id based rollback triggered and succeeded"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
     # case: check greenboot-set-rollback-trigger log at first boot
     - name: check greenboot-set-rollback-trigger at first boot
       block:
@@ -429,6 +472,28 @@
               - "'boot_success=1' in result_grubenv.stdout"
             fail_msg: "Not found boot_success=1"
             success_msg: "Found boot_success=1"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: verify set-rollback-trigger grubenv state is cleaned up after rollback
+    - name: fallback and greenboot_next_deployment_id should be cleared from grubenv
+      block:
+        - name: check grubenv for leftover rollback trigger state
+          command: grub2-editenv list
+          register: result_grubenv_trigger
+          become: yes
+
+        - assert:
+            that:
+              - "'fallback' not in result_grubenv_trigger.stdout"
+              - "'greenboot_next_deployment_id' not in result_grubenv_trigger.stdout"
+            fail_msg: "fallback or greenboot_next_deployment_id still present in grubenv after rollback"
+            success_msg: "fallback and greenboot_next_deployment_id cleared from grubenv"
       always:
         - set_fact:
             total_counter: "{{ total_counter | int + 1 }}"
