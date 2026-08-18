@@ -57,10 +57,17 @@ case "${ID}-${VERSION_ID}" in
         BOOT_ARGS="uefi"
         ;;
     "fedora-45")
+        OS_VARIANT="fedora-unknown"
+        BASE_IMAGE_URL="quay.io/fedora/fedora-iot:45"
+        BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
+        BOOT_ARGS="uefi"
+        ;;
+    "fedora-rawhide")
         OS_VARIANT="fedora-rawhide"
         BASE_IMAGE_URL="quay.io/fedora/fedora-iot:rawhide"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
+        COPR_CHROOT="fedora-rawhide-${ARCH}"
         ;;
     "centos-10")
         OS_VARIANT="centos-stream9"

@@ -62,7 +62,12 @@ case "${ID}-${VERSION_ID}" in
         ;;
     "fedora-45")
         FEDORA_VERSION="45"
+        OS_VARIANT="fedora-unknown"
+        ;;
+    "fedora-rawhide")
+        FEDORA_VERSION="46"
         OS_VARIANT="fedora-rawhide"
+        COPR_CHROOT="fedora-rawhide-${ARCH}"
         ;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
@@ -293,7 +298,7 @@ check_result
 greenprint "📦 Enabling Packit Copr repo for PR #${PR_NUMBER}"
 for _ in $(seq 0 30); do
     ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
-        "sudo dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER}"
+        "sudo dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} ${COPR_CHROOT:-}"
     copr_result=$?
     if [[ $copr_result == 0 ]]; then
         break
