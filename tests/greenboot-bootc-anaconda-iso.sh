@@ -302,6 +302,18 @@ EOF
         ;;
 esac
 
+# Listing greenboot/greenboot-default-health-checks by name isn't enough to
+# guarantee the Copr build gets picked: dnf always resolves to the highest
+# NEVRA across all enabled repos, and Copr snapshot builds conventionally use
+# a Release starting at "0.<timestamp>...", the same convention official
+# pre-GA/rebuilt packages use. Whenever a base repo ships a greenboot release
+# that outranks the current Copr build, an unscoped reinstall/install would
+# silently fall back to the stock package instead. Restrict resolution to
+# just the just-enabled Copr repo so there is only one candidate regardless
+# of what other repos offer (see commit eb7d75c, which fixed the same class
+# of bug for the ostree/osbuild-composer flow).
+GREENBOOT_COPR_REPO_ID="copr:copr.fedorainfracloud.org:packit:fedora-iot-greenboot-rs-${PR_NUMBER}"
+
 if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
     tee -a Containerfile > /dev/null << EOF
 COPY greenboot-*.rpm /tmp/
@@ -314,7 +326,9 @@ else
 RUN (dnf install -y 'dnf5-command(copr)' || dnf install -y 'dnf-command(copr)') && \
     dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} ${COPR_CHROOT} && \
     dnf clean metadata && \
-    (dnf reinstall -y greenboot greenboot-default-health-checks || dnf install -y greenboot greenboot-default-health-checks) && \
+    dnf download --from-repo='${GREENBOOT_COPR_REPO_ID}' --destdir /tmp/copr-rpms greenboot greenboot-default-health-checks && \
+    dnf install -y /tmp/copr-rpms/*.rpm && \
+    rm -rf /tmp/copr-rpms && \
     systemctl enable greenboot-healthcheck.service
 EOF
 fi
