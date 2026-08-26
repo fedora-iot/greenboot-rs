@@ -254,6 +254,7 @@ sudo virt-install  --name="${IMAGE_KEY}"\
                    --network network=integration,mac=34:49:22:B0:83:30 \
                    --os-variant ${OS_VARIANT} \
                    --boot ${BOOT_ARGS} \
+                   --tpm none \
                    --graphics none \
                    --serial file,path=${CONSOLE_LOG} \
                    --noautoconsole \
