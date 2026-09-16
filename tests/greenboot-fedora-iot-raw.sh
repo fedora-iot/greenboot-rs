@@ -326,8 +326,22 @@ fi
 GREENBOOT_COPR_REPO_ID="copr:copr.fedorainfracloud.org:packit:fedora-iot-greenboot-rs-${PR_NUMBER}"
 
 greenprint "📦 Downloading greenboot RPMs from Copr"
-ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
-    "dnf download --from-repo='${GREENBOOT_COPR_REPO_ID}' --destdir /tmp/greenboot-rpms greenboot greenboot-default-health-checks"
+download_result=1
+for _ in $(seq 0 30); do
+    if ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
+        "mkdir -p /tmp/greenboot-rpms && dnf download --disablerepo='*' --enablerepo='${GREENBOOT_COPR_REPO_ID}' --destdir /tmp/greenboot-rpms greenboot greenboot-default-health-checks"; then
+        download_result=0
+        break
+    fi
+    greenprint "Copr metadata not ready yet, retrying download in 30 seconds..."
+    sleep 30
+done
+
+if [[ $download_result != 0 ]]; then
+    greenprint "❌ Failed to download greenboot RPMs from Copr after retries"
+    clean_up
+    exit 1
+fi
 
 greenprint "📦 Replacing greenboot packages with PR build"
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \

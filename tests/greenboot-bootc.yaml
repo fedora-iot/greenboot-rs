@@ -141,7 +141,9 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
-    # case: check greenboot-set-rollback-trigger log at first boot
+    # case: check greenboot-set-rollback-trigger ran when the upgrade was staged
+    # After `bootc upgrade`, ostree-finalize-staged stops on reboot and ExecStop
+    # runs set-rollback-trigger. That lands in the pre-upgrade boot journal (-b -7).
     - name: check greenboot-set-rollback-trigger at first boot
       block:
         - name: greenboot rollback trigger should be found here
@@ -153,7 +155,7 @@
             that:
               - "'Rollback trigger set successfully' in result_greenboot_trigger_log.stdout"
               - "'Dependency failed' not in result_greenboot_trigger_log.stdout"
-            fail_msg: "Expected greenboot trigger log or systemd update log not found, or dependency failure found"
+            fail_msg: "Expected rollback trigger success log not found, or dependency failure found"
             success_msg: "Found expected log and no dependency failures"
 
       always:
@@ -192,20 +194,28 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
-    # case: check greenboot-set-rollback-trigger log at boot after upgrade
+    # case: first boot of the upgraded (failing) image must not re-run the trigger
+    # There is no second staged update; the trigger was already set on -b -7 shutdown.
     - name: check greenboot-set-rollback-trigger at boot after upgrade
       block:
-        - name: greenboot rollback trigger should be found here
+        - name: greenboot rollback trigger should not run on first upgraded boot
           command: journalctl -b -6 -u greenboot-set-rollback-trigger.service
           become: yes
           register: result_greenboot_trigger_log
 
+        - name: get healthcheck log from first upgraded boot
+          command: journalctl -b -6 -u greenboot-healthcheck.service --no-pager
+          become: yes
+          register: result_healthcheck_upgrade_boot
+
         - assert:
             that:
-              - "'Rollback trigger set successfully' in result_greenboot_trigger_log.stdout"
+              - "'-- No entries --' in result_greenboot_trigger_log.stdout"
+              - "'Rollback trigger set successfully' not in result_greenboot_trigger_log.stdout"
               - "'Dependency failed' not in result_greenboot_trigger_log.stdout"
-            fail_msg: "Expected greenboot trigger log not found, or dependency failure found"
-            success_msg: "Found expected log and no dependency failures"
+              - "'required script /etc/greenboot/check/required.d/10_failing_check.sh failed!' in result_healthcheck_upgrade_boot.stdout"
+            fail_msg: "Rollback trigger unexpectedly ran on the upgraded boot, boot index is wrong, or a dependency failure was found"
+            success_msg: "Rollback trigger did not run on upgraded boot; failing health check confirms this is the upgrade boot"
 
       always:
         - set_fact:
@@ -215,7 +225,9 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
-    # case: check greenboot-set-rollback-trigger log at boot after fallback
+    # case: after fallback the trigger unit is not pulled in (no staged update)
+    # systemd-update-done still uses ConditionNeedsUpdate; phrasing differs by distro
+    # but both include "no trigger condition checks were met".
     - name: check greenboot-set-rollback-trigger at boot after fallback
       block:
         - name: systemd update done log should be found here
@@ -223,18 +235,19 @@
           become: yes
           register: result_systemd_update_log
 
-        - name: greenboot rollback trigger should be found here
+        - name: greenboot rollback trigger should not run after fallback
           command: journalctl -b -0 -u greenboot-set-rollback-trigger.service
           become: yes
           register: result_greenboot_trigger_log
 
         - assert:
             that:
-              - "'Update is Completed skipped, no trigger condition checks were met' in result_systemd_update_log.stdout"
-              - "'Greenboot Rollback trigger skipped, no trigger condition checks were met' in result_greenboot_trigger_log.stdout"
+              - "'no trigger condition checks were met' in result_systemd_update_log.stdout"
+              - "'-- No entries --' in result_greenboot_trigger_log.stdout"
+              - "'Rollback trigger set successfully' not in result_greenboot_trigger_log.stdout"
               - "'Dependency failed' not in result_greenboot_trigger_log.stdout"
-            fail_msg: "Expected greenboot trigger log or systemd update log not found, or dependency failure found"
-            success_msg: "Found expected log and no dependency failures"
+            fail_msg: "Expected systemd-update-done skip log, or rollback trigger unexpectedly ran after fallback"
+            success_msg: "systemd-update-done skipped and rollback trigger did not run after fallback"
 
       always:
         - set_fact:
@@ -243,39 +256,6 @@
         - name: failed count + 1
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
-      when:
-        - ansible_facts['distribution'] == "Fedora"
-
-    # case: check greenboot-set-rollback-trigger log at boot after fallback
-    - name: check greenboot-set-rollback-trigger at boot after fallback
-      block:
-        - name: systemd update done log should be found here
-          command: journalctl -b -0 -u systemd-update-done.service
-          become: yes
-          register: result_systemd_update_log
-
-        - name: greenboot rollback trigger should be found here
-          command: journalctl -b -0 -u greenboot-set-rollback-trigger.service
-          become: yes
-          register: result_greenboot_trigger_log
-
-        - assert:
-            that:
-              - "'Update is Completed was skipped because no trigger condition checks were met' in result_systemd_update_log.stdout"
-              - "'Greenboot Rollback trigger was skipped because no trigger condition checks were met' in result_greenboot_trigger_log.stdout"
-              - "'Dependency failed' not in result_greenboot_trigger_log.stdout"
-            fail_msg: "Expected greenboot trigger log or systemd update log not found, or dependency failure found"
-            success_msg: "Found expected log and no dependency failures"
-
-      always:
-        - set_fact:
-            total_counter: "{{ total_counter | int + 1 }}"
-      rescue:
-        - name: failed count + 1
-          set_fact:
-            failed_counter: "{{ failed_counter | int + 1 }}"
-      when:
-        - (ansible_facts['distribution'] == 'CentOS') or (ansible_facts['distribution'] == 'RedHat')
 
     # case: check disable health checks
     - name: check disable health checks

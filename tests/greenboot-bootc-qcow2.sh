@@ -39,6 +39,7 @@ EDGE_USER_PASSWORD=foobar
 CONSOLE_LOG=/tmp/vm-console.log
 
 COPR_CHROOT=""
+PR_NUM="${PR_NUMBER:-0}"
 
 # RPM acquisition mode:
 #   If DOWNLOAD_NODE and COMPOSE_ID are both set -> download from compose
@@ -254,9 +255,9 @@ greenprint "Copying test assets"
 (
     cd ..
     cp testing_assets/passing_script.sh tests/
-    cp testing_assets/passing_binary tests/
+    cp "testing_assets/passing_binary.${ARCH}" tests/passing_binary
     cp testing_assets/failing_script.sh tests/
-    cp testing_assets/failing_binary tests/
+    cp "testing_assets/failing_binary.${ARCH}" tests/failing_binary
 )
 
 ###########################################################
@@ -319,7 +320,7 @@ esac
 # just the just-enabled Copr repo so there is only one candidate regardless
 # of what other repos offer (see commit eb7d75c, which fixed the same class
 # of bug for the ostree/osbuild-composer flow).
-GREENBOOT_COPR_REPO_ID="copr:copr.fedorainfracloud.org:packit:fedora-iot-greenboot-rs-${PR_NUMBER}"
+GREENBOOT_COPR_REPO_ID="copr:copr.fedorainfracloud.org:packit:fedora-iot-greenboot-rs-${PR_NUM}"
 
 if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
     tee -a Containerfile > /dev/null << EOF
@@ -331,9 +332,9 @@ EOF
 else
     tee -a Containerfile > /dev/null << EOF
 RUN (dnf install -y 'dnf5-command(copr)' || dnf install -y 'dnf-command(copr)') && \
-    dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} ${COPR_CHROOT} && \
+    dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUM} ${COPR_CHROOT} && \
     dnf clean metadata && \
-    dnf download --from-repo='${GREENBOOT_COPR_REPO_ID}' --destdir /tmp/copr-rpms greenboot greenboot-default-health-checks && \
+    dnf download --disablerepo='*' --enablerepo='${GREENBOOT_COPR_REPO_ID}' --destdir /tmp/copr-rpms greenboot greenboot-default-health-checks && \
     dnf install -y /tmp/copr-rpms/*.rpm && \
     rm -rf /tmp/copr-rpms && \
     systemctl enable greenboot-healthcheck.service

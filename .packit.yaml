@@ -57,6 +57,8 @@ jobs:
   - centos-stream-10-x86_64
   - fedora-44-aarch64
   - fedora-44-x86_64
+  - fedora-45-aarch64
+  - fedora-45-x86_64
   - fedora-development-aarch64
   - fedora-development
   - fedora-rawhide-aarch64

@@ -261,10 +261,18 @@ else
 fi
 
 greenprint "Looking up exact greenboot NEVR to pin from ${GREENBOOT_NEVR_LOOKUP_URL}"
-GREENBOOT_NEVR=$(sudo dnf repoquery \
-    --repofrompath="greenboot-nevr-lookup,${GREENBOOT_NEVR_LOOKUP_URL}" \
-    --disablerepo='*' --enablerepo=greenboot-nevr-lookup \
-    --quiet --qf '%{version}-%{release}' --latest-limit=1 greenboot)
+GREENBOOT_NEVR=""
+for _ in $(seq 0 30); do
+    GREENBOOT_NEVR=$(sudo dnf repoquery \
+        --repofrompath="greenboot-nevr-lookup,${GREENBOOT_NEVR_LOOKUP_URL}" \
+        --disablerepo='*' --enablerepo=greenboot-nevr-lookup \
+        --quiet --qf '%{version}-%{release}' --latest-limit=1 greenboot || true)
+    if [ -n "$GREENBOOT_NEVR" ]; then
+        break
+    fi
+    greenprint "Copr metadata not ready yet, retrying NEVR lookup in 30s..."
+    sleep 30
+done
 
 if [ -z "$GREENBOOT_NEVR" ]; then
     echo "Failed to resolve greenboot version-release from repo ${GREENBOOT_NEVR_LOOKUP_URL}"
@@ -637,8 +645,8 @@ greenprint "🛃 Copying binary and script files to edge vm"
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo mkdir -p /etc/greenboot/red.d /etc/greenboot/green.d"
 
 # Copy all files to temp directory first (all at once)
-scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_binary "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
-scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_binary "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
+scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "../testing_assets/failing_binary.${ARCH}" "${SSH_USER}@${GUEST_ADDRESS}":/tmp/failing_binary && \
+scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "../testing_assets/passing_binary.${ARCH}" "${SSH_USER}@${GUEST_ADDRESS}":/tmp/passing_binary && \
 scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_script.sh "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
 scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_script.sh "${SSH_USER}@${GUEST_ADDRESS}":/tmp/
 
