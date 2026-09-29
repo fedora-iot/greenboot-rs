@@ -680,7 +680,7 @@ ansible_ssh_common_args="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/
 EOF
 
 # Test IoT/Edge OS
-ansible-playbook -v -i "${TEMPDIR}/inventory" greenboot-ostree.yaml || RESULTS=0
+ansible-playbook -v -i "${TEMPDIR}/inventory" -e greenboot_expected_nvr="${GREENBOOT_EXPECTED_NVR}" greenboot-ostree.yaml || RESULTS=0
 
 # Check image installation result
 check_result

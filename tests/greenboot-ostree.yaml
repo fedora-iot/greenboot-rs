@@ -4,6 +4,7 @@
   vars:
     total_counter: "0"
     failed_counter: "0"
+    greenboot_expected_nvr: ""
 
   tasks:
     # current target host's IP address
@@ -11,6 +12,31 @@
     - debug: var=ansible_facts['distribution_version']
     - debug: var=ansible_facts['distribution']
     - debug: var=ansible_facts['architecture']
+
+    # case: verify the installed greenboot matches what the compose depsolve
+    # was expected to resolve. The compose's real depsolve (run by
+    # osbuild-worker) is separate from the preview depsolve we verify in
+    # greenboot-ostree.sh, so this is the only check against what actually
+    # landed on the booted system.
+    - name: verify installed greenboot matches expected build
+      block:
+        - name: get installed greenboot NVR
+          command: rpm -q greenboot
+          register: result_installed_greenboot_nvr
+
+        - assert:
+            that:
+              - result_installed_greenboot_nvr.stdout == greenboot_expected_nvr
+            fail_msg: "Installed greenboot ({{ result_installed_greenboot_nvr.stdout }}) does not match expected build ({{ greenboot_expected_nvr }})"
+            success_msg: "Installed greenboot matches expected build: {{ greenboot_expected_nvr }}"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: greenboot_expected_nvr | length > 0
 
     # case: check greenboot* services
     - name: greenboot healthcheck service should be enabled
