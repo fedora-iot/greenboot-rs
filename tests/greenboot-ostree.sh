@@ -59,6 +59,42 @@ BOOT_ARGS="uefi"
 SSH_OPTIONS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5)
 SSH_KEY=key/ostree_key
 
+# RPM acquisition mode:
+#   USE_BREW_RPMS=true -> download exact Brew RPM URLs (takes precedence)
+#   Otherwise, DOWNLOAD_NODE and COMPOSE_ID set -> download from compose
+#   Otherwise -> install greenboot from Copr (default)
+USE_BREW_RPMS="${USE_BREW_RPMS:-false}"
+USE_COMPOSE_RPMS=false
+case "${USE_BREW_RPMS}" in
+    true)
+        case "${ID}-${VERSION_ID}" in
+            rhel-9.8|rhel-9.9) ;;
+            *)
+                echo "ERROR: Brew RPM mode supports RHEL 9.8 and RHEL 9.9" >&2
+                exit 1
+                ;;
+        esac
+        if [[ -z "${BREW_GREENBOOT_RPM_URL:-}" ||
+              -z "${BREW_GREENBOOT_DEFAULT_HEALTH_CHECKS_RPM_URL:-}" ]]; then
+            echo "ERROR: Brew mode requires BREW_GREENBOOT_RPM_URL and BREW_GREENBOOT_DEFAULT_HEALTH_CHECKS_RPM_URL" >&2
+            exit 1
+        fi
+        if [[ -z "${DOWNLOAD_NODE:-}" ]]; then
+            echo "ERROR: DOWNLOAD_NODE is required for RHEL dependency repositories" >&2
+            exit 1
+        fi
+        ;;
+    false)
+        if [[ -n "${DOWNLOAD_NODE:-}" && -n "${COMPOSE_ID:-}" ]]; then
+            USE_COMPOSE_RPMS=true
+        fi
+        ;;
+    *)
+        echo "ERROR: USE_BREW_RPMS must be true or false" >&2
+        exit 1
+        ;;
+esac
+
 # set locale to en_US.UTF-8
 sudo dnf install -y glibc-langpack-en
 sudo localectl set-locale LANG=en_US.UTF-8
@@ -77,16 +113,9 @@ for _ in $(seq 0 30); do
     sleep 10
 done
 
-# RPM acquisition mode:
-#   If DOWNLOAD_NODE and COMPOSE_ID are both set -> download from compose
-#   Otherwise -> install greenboot from Copr (default)
-USE_COMPOSE_RPMS=false
-if [[ -n "${DOWNLOAD_NODE:-}" && -n "${COMPOSE_ID:-}" ]]; then
-    USE_COMPOSE_RPMS=true
-fi
 GREENBOOT_PACKAGES_URL=""
 # PR_NUMBER is only needed for the Copr path; default it so `set -u` doesn't
-# crash when running in compose-RPM mode without it set.
+# crash when running in Brew or compose RPM mode without it set.
 PR_NUMBER="${PR_NUMBER:-}"
 
 # Unlike Fedora IoT / CentOS Stream Edge, RHEL nightly composes don't ship any
@@ -173,19 +202,28 @@ sudo systemctl enable --now httpd.service
 greenprint "Start osbuild-composer.socket"
 sudo systemctl enable --now osbuild-composer.socket
 
-if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
-    # Layer in a pre-built greenboot RPM from compose instead of Copr, e.g.
+if [[ "${USE_BREW_RPMS}" == true ]] ||
+   [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
+    # Layer in pre-built greenboot RPMs from Brew or compose instead of Copr, e.g.
     # for RHEL targets where Copr only provides a CentOS Stream approximation.
-    greenprint "Downloading greenboot RPMs from compose: ${GREENBOOT_PACKAGES_URL}"
     sudo dnf install -y --nogpgcheck createrepo_c
     sudo mkdir -p /var/www/html/packages
     # /var/www/html is root-owned (created by the httpd package); hand it to
-    # the current user so the unprivileged curl calls in download_compose_rpms
+    # the current user so the unprivileged curl calls in the download helpers
     # can write into it. restorecon below fixes the SELinux context afterward.
     sudo chown "$(id -u):$(id -g)" /var/www/html/packages
-    # source: tests/common/download-compose-rpms.sh
-    source "$(dirname "${BASH_SOURCE[0]}")/common/download-compose-rpms.sh"
-    download_compose_rpms "${GREENBOOT_PACKAGES_URL}" "/var/www/html/packages"
+    if [[ "${USE_BREW_RPMS}" == true ]]; then
+        greenprint "Downloading greenboot RPMs from Brew"
+        # source: tests/common/download-brew-rpms.sh
+        source "$(dirname "${BASH_SOURCE[0]}")/common/download-brew-rpms.sh"
+        download_brew_rpms "${BREW_GREENBOOT_RPM_URL}" \
+            "${BREW_GREENBOOT_DEFAULT_HEALTH_CHECKS_RPM_URL}" "/var/www/html/packages"
+    else
+        greenprint "Downloading greenboot RPMs from compose: ${GREENBOOT_PACKAGES_URL}"
+        # source: tests/common/download-compose-rpms.sh
+        source "$(dirname "${BASH_SOURCE[0]}")/common/download-compose-rpms.sh"
+        download_compose_rpms "${GREENBOOT_PACKAGES_URL}" "/var/www/html/packages"
+    fi
     sudo createrepo_c /var/www/html/packages
     sudo restorecon -Rv /var/www/html/packages
     # Register the local repo with osbuild-composer so blueprints depsolve
@@ -246,7 +284,8 @@ fi
 # release reliably outranks the stock "0.el9" release.
 #
 # Wait for Copr's repo metadata to be queryable before the compose starts.
-if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
+if [[ "${USE_BREW_RPMS}" == true ]] ||
+   [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
     GREENBOOT_SOURCE_READY_URL="http://127.0.0.1/packages/"
 else
     GREENBOOT_SOURCE_READY_URL="${COPR_REPO_URL}"

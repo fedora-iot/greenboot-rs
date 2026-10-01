@@ -42,12 +42,40 @@ COPR_CHROOT=""
 PR_NUM="${PR_NUMBER:-0}"
 
 # RPM acquisition mode:
-#   If DOWNLOAD_NODE and COMPOSE_ID are both set -> download from compose
+#   USE_BREW_RPMS=true -> download exact Brew RPM URLs (takes precedence)
+#   Otherwise, DOWNLOAD_NODE and COMPOSE_ID set -> download from compose
 #   Otherwise -> install greenboot from Copr (default)
+USE_BREW_RPMS="${USE_BREW_RPMS:-false}"
 USE_COMPOSE_RPMS=false
-if [[ -n "${DOWNLOAD_NODE:-}" && -n "${COMPOSE_ID:-}" ]]; then
-    USE_COMPOSE_RPMS=true
-fi
+case "${USE_BREW_RPMS}" in
+    true)
+        case "${ID}-${VERSION_ID}" in
+            rhel-9.9|rhel-10.3) ;;
+            *)
+                echo "ERROR: Brew RPM mode supports RHEL 9.9 and RHEL 10.3" >&2
+                exit 1
+                ;;
+        esac
+        if [[ -z "${BREW_GREENBOOT_RPM_URL:-}" ||
+              -z "${BREW_GREENBOOT_DEFAULT_HEALTH_CHECKS_RPM_URL:-}" ]]; then
+            echo "ERROR: Brew mode requires BREW_GREENBOOT_RPM_URL and BREW_GREENBOOT_DEFAULT_HEALTH_CHECKS_RPM_URL" >&2
+            exit 1
+        fi
+        if [[ -z "${DOWNLOAD_NODE:-}" ]]; then
+            echo "ERROR: DOWNLOAD_NODE is required for RHEL dependency repositories" >&2
+            exit 1
+        fi
+        ;;
+    false)
+        if [[ -n "${DOWNLOAD_NODE:-}" && -n "${COMPOSE_ID:-}" ]]; then
+            USE_COMPOSE_RPMS=true
+        fi
+        ;;
+    *)
+        echo "ERROR: USE_BREW_RPMS must be true or false" >&2
+        exit 1
+        ;;
+esac
 GREENBOOT_PACKAGES_URL=""
 
 case "${ID}-${VERSION_ID}" in
@@ -262,10 +290,17 @@ greenprint "Copying test assets"
 
 ###########################################################
 ##
-## Optionally download greenboot rpm packages from compose
+## Optionally download greenboot RPM packages from Brew or compose
 ##
 ###########################################################
-if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
+if [[ "${USE_BREW_RPMS}" == true ]]; then
+    greenprint "Downloading greenboot RPMs from Brew"
+    rm -f greenboot-*.rpm
+    # source: tests/common/download-brew-rpms.sh
+    source "$(dirname "${BASH_SOURCE[0]}")/common/download-brew-rpms.sh"
+    download_brew_rpms "${BREW_GREENBOOT_RPM_URL}" \
+        "${BREW_GREENBOOT_DEFAULT_HEALTH_CHECKS_RPM_URL}" "."
+elif [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
     greenprint "Downloading greenboot RPMs from compose"
     rm -f greenboot-*.rpm
     # source: tests/common/download-compose-rpms.sh
@@ -328,10 +363,17 @@ esac
 # of bug for the ostree/osbuild-composer flow).
 GREENBOOT_COPR_REPO_ID="copr:copr.fedorainfracloud.org:packit:fedora-iot-greenboot-rs-${PR_NUM}"
 
-if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
+# Brew builds can be unsigned; scope this option to Brew installations.
+LOCAL_RPM_DNF_OPTIONS=""
+if [[ "${USE_BREW_RPMS}" == true ]]; then
+    LOCAL_RPM_DNF_OPTIONS="--nogpgcheck"
+fi
+
+if [[ "${USE_BREW_RPMS}" == true ]] ||
+   [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
     tee -a Containerfile > /dev/null << EOF
 COPY greenboot-*.rpm /tmp/
-RUN dnf install -y /tmp/greenboot-*.rpm && \
+RUN dnf install -y ${LOCAL_RPM_DNF_OPTIONS} /tmp/greenboot-*.rpm && \
     rm -f /tmp/greenboot-*.rpm && \
     systemctl enable greenboot-healthcheck.service
 EOF
@@ -372,7 +414,7 @@ RUN mkdir -p /home/${EDGE_USER}/.ssh && \
     chown -R ${EDGE_USER}:${EDGE_USER} /home/${EDGE_USER}/.ssh
 EOF
 
-greenprint "Building container (retrying until Copr build is available)"
+greenprint "Building container (with retries)"
 build_success=false
 for attempt in $(seq 1 10); do
     if podman build --retry=5 --retry-delay=10s -t quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID} -f Containerfile .; then
