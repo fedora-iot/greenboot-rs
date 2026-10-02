@@ -105,6 +105,9 @@ GUEST_REPO_APPSTREAM_URL=""
 # Customize repository
 sudo mkdir -p /etc/osbuild-composer/repositories
 
+# Greenboot repo injected here (set per-distro below).
+COMPOSER_REPO_FILE=""
+
 # Set os-variant and boot location used by virt-install.
 case "${ID}-${VERSION_ID}" in
     "fedora-"*)
@@ -114,6 +117,17 @@ case "${ID}-${VERSION_ID}" in
         OS_VARIANT="fedora-unknown"
         BOOT_LOCATION="https://dl.fedoraproject.org/pub/fedora/linux/releases/${VERSION_ID}/Everything/${ARCH}/os/"
         COPR_REPO_URL="https://download.copr.fedorainfracloud.org/results/packit/fedora-iot-greenboot-rs-${PR_NUMBER}/fedora-${VERSION_ID}-${ARCH}/"
+        # Fedora uses the shipped repository definition as-is. A file in
+        # /etc/osbuild-composer/repositories replaces the shipped one wholesale,
+        # so seed a copy before injecting the greenboot source into it.
+        SHIPPED_REPO_FILE="/usr/share/osbuild-composer/repositories/fedora-${VERSION_ID}.json"
+        if [[ ! -f "${SHIPPED_REPO_FILE}" ]]; then
+            echo "No shipped repository definition at ${SHIPPED_REPO_FILE}"
+            ls -1 /usr/share/osbuild-composer/repositories/ || true
+            exit 1
+        fi
+        COMPOSER_REPO_FILE="/etc/osbuild-composer/repositories/fedora-${VERSION_ID}.json"
+        sudo cp "${SHIPPED_REPO_FILE}" "${COMPOSER_REPO_FILE}"
         ;;
     "centos-9")
         OSTREE_REF="centos/9/${ARCH}/edge"
@@ -121,7 +135,8 @@ case "${ID}-${VERSION_ID}" in
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
         BOOT_LOCATION="https://composes.stream.centos.org/production/latest-CentOS-Stream-9/compose/BaseOS/${ARCH}/os/"
         COPR_REPO_URL="https://download.copr.fedorainfracloud.org/results/packit/fedora-iot-greenboot-rs-${PR_NUMBER}/centos-stream-9-${ARCH}/"
-        sudo cp files/centos-stream-9.json /etc/osbuild-composer/repositories/centos-9.json;;
+        COMPOSER_REPO_FILE="/etc/osbuild-composer/repositories/centos-9.json"
+        sudo cp files/centos-stream-9.json "${COMPOSER_REPO_FILE}";;
     "rhel-9.8")
         OSTREE_REF="rhel/9/${ARCH}/edge"
         OS_VARIANT="rhel9-unknown"
@@ -134,7 +149,8 @@ case "${ID}-${VERSION_ID}" in
         GUEST_REPO_ID="rhel-9-8"
         GUEST_REPO_BASEOS_URL="${BOOT_LOCATION}"
         GUEST_REPO_APPSTREAM_URL="${BOOT_LOCATION/BaseOS/AppStream}"
-        sed "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8-0.json | sudo tee /etc/osbuild-composer/repositories/rhel-98.json > /dev/null
+        COMPOSER_REPO_FILE="/etc/osbuild-composer/repositories/rhel-98.json"
+        sed "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8-0.json | sudo tee "${COMPOSER_REPO_FILE}" > /dev/null
         set -x
         ;;
     "rhel-9.9")
@@ -149,13 +165,48 @@ case "${ID}-${VERSION_ID}" in
         GUEST_REPO_ID="rhel-9-9"
         GUEST_REPO_BASEOS_URL="${BOOT_LOCATION}"
         GUEST_REPO_APPSTREAM_URL="${BOOT_LOCATION/BaseOS/AppStream}"
-        sed "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-9-0.json | sudo tee /etc/osbuild-composer/repositories/rhel-99.json > /dev/null
+        COMPOSER_REPO_FILE="/etc/osbuild-composer/repositories/rhel-99.json"
+        sed "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-9-0.json | sudo tee "${COMPOSER_REPO_FILE}" > /dev/null
         set -x
         ;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
         exit 1;;
 esac
+
+# Set greenboot repo source: compose RPMs or Copr build.
+if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
+    GREENBOOT_REPO_ID="greenboot-compose"
+    GREENBOOT_REPO_NAME="Local compose greenboot RPMs"
+    GREENBOOT_REPO_URL="http://127.0.0.1/packages/"
+else
+    GREENBOOT_REPO_ID="greenboot-copr"
+    GREENBOOT_REPO_NAME="Packit Copr greenboot PR build"
+    GREENBOOT_REPO_URL="${COPR_REPO_URL}"
+fi
+
+# composer-cli sources add only affects "blueprint" package set, but greenboot
+# is in the "os" package set. Inject into distro repo definition so it applies
+# to all pipelines. Must run before osbuild-composer starts.
+inject_greenboot_repo () {
+    local repo_file=$1
+
+    greenprint "Injecting ${GREENBOOT_REPO_ID} into ${repo_file}"
+    sudo jq \
+        --arg arch "${ARCH}" \
+        --arg name "${GREENBOOT_REPO_ID}" \
+        --arg url "${GREENBOOT_REPO_URL}" \
+        '.[$arch] += [{"name": $name, "baseurl": $url, "check_gpg": false}]' \
+        "${repo_file}" | sudo tee "${repo_file}.tmp" > /dev/null
+    sudo mv "${repo_file}.tmp" "${repo_file}"
+    sudo jq -r --arg arch "${ARCH}" '.[$arch][] | "\(.name) \(.baseurl)"' "${repo_file}"
+}
+
+if [[ -z "${COMPOSER_REPO_FILE}" ]]; then
+    echo "No osbuild-composer repository definition for ${ID}-${VERSION_ID}"
+    exit 1
+fi
+inject_greenboot_repo "${COMPOSER_REPO_FILE}"
 
 # Check ostree_key permissions
 KEY_PERMISSION_PRE=$(stat -L -c "%a %G %U" key/ostree_key | grep -oP '\d+' | head -n 1)
@@ -188,56 +239,6 @@ if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
     download_compose_rpms "${GREENBOOT_PACKAGES_URL}" "/var/www/html/packages"
     sudo createrepo_c /var/www/html/packages
     sudo restorecon -Rv /var/www/html/packages
-    # Register the local repo with osbuild-composer so blueprints depsolve
-    # picks up the compose RPMs instead of falling back to the nightly repo.
-    greenprint "Adding local compose RPM repo as osbuild-composer source"
-    sudo tee /tmp/greenboot-compose.toml > /dev/null << EOF
-id = "greenboot-compose"
-name = "Local compose greenboot RPMs"
-type = "yum-baseurl"
-url = "http://127.0.0.1/packages/"
-check_gpg = false
-check_ssl = false
-EOF
-    compose_source_added=false
-    for _ in $(seq 0 30); do
-        if sudo composer-cli sources add /tmp/greenboot-compose.toml; then
-            compose_source_added=true
-            break
-        fi
-        greenprint "Compose RPM source not ready yet, retrying in 30s..."
-        sleep 30
-    done
-
-    if [ "$compose_source_added" = false ]; then
-        echo "Failed to add compose RPM source after 30 attempts."
-        exit 1
-    fi
-else
-    # Add Copr repo as osbuild-composer source for greenboot PR builds
-    greenprint "Adding Copr source for greenboot PR #${PR_NUMBER}"
-    sudo tee /tmp/greenboot-copr.toml > /dev/null << EOF
-id = "greenboot-copr"
-name = "Packit Copr greenboot PR build"
-type = "yum-baseurl"
-url = "${COPR_REPO_URL}"
-check_gpg = false
-check_ssl = false
-EOF
-    copr_added=false
-    for _ in $(seq 0 30); do
-        if sudo composer-cli sources add /tmp/greenboot-copr.toml; then
-            copr_added=true
-            break
-        fi
-        greenprint "Copr source not ready yet, retrying in 30s..."
-        sleep 30
-    done
-
-    if [ "$copr_added" = false ]; then
-        echo "Failed to add Copr source after 30 attempts."
-        exit 1
-    fi
 fi
 
 # greenboot is a default package for CS9/RHEL9 edge-commit and blueprints
@@ -245,12 +246,8 @@ fi
 # Leave it unpinned and let dnf pick the highest EVR -- Copr's timestamped
 # release reliably outranks the stock "0.el9" release.
 #
-# Wait for Copr's repo metadata to be queryable before the compose starts.
-if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
-    GREENBOOT_SOURCE_READY_URL="http://127.0.0.1/packages/"
-else
-    GREENBOOT_SOURCE_READY_URL="${COPR_REPO_URL}"
-fi
+# Wait for the repo metadata to be queryable before the compose starts.
+GREENBOOT_SOURCE_READY_URL="${GREENBOOT_REPO_URL}"
 
 greenprint "Waiting for greenboot source metadata to be ready at ${GREENBOOT_SOURCE_READY_URL}"
 GREENBOOT_EXPECTED_NVR=""
@@ -258,7 +255,7 @@ for _ in $(seq 0 30); do
     GREENBOOT_EXPECTED_NVR=$(sudo dnf repoquery \
         --repofrompath="greenboot-source-ready,${GREENBOOT_SOURCE_READY_URL}" \
         --disablerepo='*' --enablerepo=greenboot-source-ready \
-        --quiet --qf '%{name}-%{version}-%{release}' --latest-limit=1 greenboot || true)
+        --quiet --qf '%{name}-%{version}-%{release}.%{arch}' --latest-limit=1 greenboot || true)
     if [ -n "$GREENBOOT_EXPECTED_NVR" ]; then
         break
     fi
@@ -442,6 +439,17 @@ build_image() {
         echo "Something went wrong with the compose. 😢"
         exit 1
     fi
+
+    # Verify manifest has expected greenboot before waiting for guest boot.
+    greenprint "🔍 Verifying greenboot RPMs in compose manifest"
+    MANIFEST_GREENBOOT=$(jq -r '.. | .url? // empty' \
+        "osbuild-${ID}-${VERSION_ID}-${COMPOSE_ID}.json" | grep -i "/greenboot" || true)
+    echo "${MANIFEST_GREENBOOT}"
+    if ! grep -q "${GREENBOOT_EXPECTED_NVR}" <<< "${MANIFEST_GREENBOOT}"; then
+        greenprint "❌ compose did NOT build ${GREENBOOT_EXPECTED_NVR}"
+        exit 1
+    fi
+    greenprint "✅ compose built expected greenboot: ${GREENBOOT_EXPECTED_NVR}"
 
     # Stop watching the worker journal.
     sudo pkill -P ${WORKER_JOURNAL_PID}
