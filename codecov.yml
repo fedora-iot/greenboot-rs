@@ -1,0 +1,17 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 75%
+        threshold: 1%
+    patch:
+      default:
+        target: 75%
+        threshold: 1%
+
+comment:
+  layout: "reach, diff, flags, files"
+  require_changes: false
+
+ignore:
+  - "src/main.rs"

@@ -10,6 +10,7 @@ PLATFORMS = $(shell (echo {x86_64,aarch64,powerpc64le,s390x}-unknown-linux-gnu))
 LLVM_COV ?= /usr/bin/llvm-cov
 LLVM_PROFDATA ?= /usr/bin/llvm-profdata
 COVERAGE_OUTPUT_DIR ?= tests/coverage
+COVERAGE_IGNORE_REGEX ?= main\.rs$$
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 GREENBOOT_RUST_DEPENDENCIES = rust-anyhow+default-devel \
 				rust-clap+derive-devel \
@@ -104,11 +105,13 @@ test-coverage:
 		cargo install cargo-llvm-cov; \
 	fi
 	@echo "Running test coverage (results will be in $(COVERAGE_OUTPUT_DIR))..."
-	sudo PATH=$(HOME)/.cargo/bin:$$PATH LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) cargo llvm-cov test -- --test-threads=1; \
+	sudo PATH=$(HOME)/.cargo/bin:$$PATH LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) cargo llvm-cov test --ignore-filename-regex '$(COVERAGE_IGNORE_REGEX)' -- --test-threads=1; \
 	test_exit=$$?; \
-	sudo PATH=$(HOME)/.cargo/bin:$$PATH LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) cargo llvm-cov report --html --output-dir $(COVERAGE_OUTPUT_DIR)
-	sudo chmod -R 777 $(COVERAGE_OUTPUT_DIR)
+	sudo PATH=$(HOME)/.cargo/bin:$$PATH LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) cargo llvm-cov report --ignore-filename-regex '$(COVERAGE_IGNORE_REGEX)' --html --output-dir $(COVERAGE_OUTPUT_DIR)
+	sudo PATH=$(HOME)/.cargo/bin:$$PATH LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) cargo llvm-cov report --ignore-filename-regex '$(COVERAGE_IGNORE_REGEX)' --lcov --output-path $(COVERAGE_OUTPUT_DIR)/lcov.info
+	sudo chmod -R a+rX $(COVERAGE_OUTPUT_DIR)
 	@echo "Coverage report generated at $(COVERAGE_OUTPUT_DIR)/html/index.html"
+	@echo "lcov report generated at $(COVERAGE_OUTPUT_DIR)/lcov.info"
 
 .PHONY: fmt
 fmt:
