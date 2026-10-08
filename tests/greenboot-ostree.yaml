@@ -97,6 +97,15 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    - name: wait for greenboot-healthcheck to complete
+      command: systemctl is-active greenboot-healthcheck.service
+      register: result_greenboot_wait
+      until: result_greenboot_wait.rc == 0 or result_greenboot_wait.rc == 3
+      retries: 30
+      delay: 2
+      failed_when: false
+      changed_when: false
+
     # case: check proper first boot handling
     - name: check greenboot-healthcheck handles first boot correctly
       block:
@@ -240,6 +249,15 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    - name: wait for greenboot-healthcheck to complete after rollback
+      command: systemctl is-active greenboot-healthcheck.service
+      register: result_greenboot_wait
+      until: result_greenboot_wait.rc == 0 or result_greenboot_wait.rc == 3
+      retries: 30
+      delay: 2
+      failed_when: false
+      changed_when: false
+
     # case: verify layered package persists after rollback
     - name: verify layered package (tree) is present after rollback
       block:
@@ -268,6 +286,9 @@
           command: journalctl -b -0 -u greenboot -u greenboot-healthcheck
           become: yes
           register: result_greenboot_log
+          until: "'FALLBACK BOOT DETECTED!' in result_greenboot_log.stdout"
+          retries: 20
+          delay: 3
 
         - assert:
             that:
@@ -291,6 +312,9 @@
           command: journalctl -u greenboot-healthcheck.service --no-pager
           become: yes
           register: result_rollback_trigger
+          until: "'Boot counter exhausted and next-deployment-id is set - initiating rollback' in result_rollback_trigger.stdout"
+          retries: 20
+          delay: 3
 
         - assert:
             that:
@@ -314,6 +338,9 @@
           command: journalctl -b -0 -u greenboot-healthcheck.service --no-pager
           become: yes
           register: result_healthcheck_post_rollback
+          until: "'FALLBACK BOOT DETECTED!' in result_healthcheck_post_rollback.stdout"
+          retries: 20
+          delay: 3
 
         - assert:
             that:
@@ -356,6 +383,9 @@
           command: grub2-editenv list
           register: result_grubenv
           become: yes
+          until: "'boot_success=1' in result_grubenv.stdout"
+          retries: 15
+          delay: 2
 
         - assert:
             that:
@@ -412,6 +442,15 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    - name: wait for greenboot-healthcheck to complete after clean deployment
+      command: systemctl is-active greenboot-healthcheck.service
+      register: result_greenboot_wait
+      until: result_greenboot_wait.rc == 0 or result_greenboot_wait.rc == 3
+      retries: 30
+      delay: 2
+      failed_when: false
+      changed_when: false
+
     # case: verify set-rollback-trigger on successful boot (grubenv state cleared)
     - name: verify GRUB fallback disarmed after successful boot
       block:
@@ -419,6 +458,9 @@
           command: journalctl -b -0 -u greenboot-healthcheck.service --no-pager
           become: yes
           register: result_fallback_disarm_log
+          until: "'Kernel booted successfully, disarming GRUB fallback before healthchecks' in result_fallback_disarm_log.stdout"
+          retries: 20
+          delay: 3
 
         - assert:
             that:
@@ -459,6 +501,9 @@
           command: grub2-editenv list
           register: result_grubenv_after_successful_boot
           become: yes
+          until: "'fallback' not in result_grubenv_after_successful_boot.stdout and 'greenboot_next_deployment_id' not in result_grubenv_after_successful_boot.stdout"
+          retries: 15
+          delay: 2
 
         - assert:
             that:
@@ -540,6 +585,15 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    - name: wait for greenboot-healthcheck to complete after kernel failure recovery
+      command: systemctl is-active greenboot-healthcheck.service
+      register: result_greenboot_wait
+      until: result_greenboot_wait.rc == 0 or result_greenboot_wait.rc == 3
+      retries: 30
+      delay: 2
+      failed_when: false
+      changed_when: false
+
     # case: check fallback log after kernel failure
     - name: fallback log should be found after kernel failure recovery
       block:
@@ -547,6 +601,9 @@
           command: journalctl -b -0 -u greenboot -u greenboot-healthcheck
           become: yes
           register: result_kernel_fallback_log
+          until: "'GRUB kernel fallback detected' in result_kernel_fallback_log.stdout"
+          retries: 20
+          delay: 3
 
         - assert:
             that:
@@ -571,6 +628,9 @@
           command: grub2-editenv list
           register: result_grubenv_kernel
           become: yes
+          until: "'fallback' not in result_grubenv_kernel.stdout and 'greenboot_next_deployment_id' not in result_grubenv_kernel.stdout"
+          retries: 15
+          delay: 2
 
         - assert:
             that:
@@ -613,6 +673,9 @@
           command: grub2-editenv list
           register: result_grubenv_boot_success_kernel
           become: yes
+          until: "'boot_success=1' in result_grubenv_boot_success_kernel.stdout"
+          retries: 15
+          delay: 2
 
         - assert:
             that:
