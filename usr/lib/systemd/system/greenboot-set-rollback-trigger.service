@@ -2,6 +2,8 @@
 Description=Greenboot Rollback trigger
 DefaultDependencies=no
 After=ostree-finalize-staged.service rpm-ostreed.service
+Conflicts=final.target
+Before=final.target
 RequiresMountsFor=/boot
 ConditionPathExists=/run/ostree-booted
 
