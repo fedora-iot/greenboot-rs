@@ -82,7 +82,7 @@ greenprint ""
 # Install required packages
 greenprint "📦 Install required packages"
 sudo dnf install -y qemu-kvm libvirt-client libvirt-daemon-kvm virt-install \
-    kpartx e2fsprogs xz ansible-core firewalld rpm-build rpmdevtools
+    kpartx e2fsprogs xz ansible-core firewalld make rpm-build rpmdevtools
 
 # Avoid collection installation failure
 for _ in $(seq 0 30); do
@@ -291,11 +291,18 @@ rm -rf rpmbuild/RPMS
 make rpm
 
 ARCH_DIR="$(pwd)/rpmbuild/RPMS/$(uname -m)"
-PR_GREENBOOT_RPM="$(find "${ARCH_DIR}" -name 'greenboot-[0-9]*.rpm' ! -name '*debug*' ! -name '*health*' | head -1)"
-PR_HEALTHCHECKS_RPM="$(find "${ARCH_DIR}" -name 'greenboot-default-health-checks-*.rpm' ! -name '*debug*' | head -1)"
+NOARCH_DIR="$(pwd)/rpmbuild/RPMS/noarch"
 
-if [[ ! -f "${PR_GREENBOOT_RPM}" ]]; then
+if ! PR_GREENBOOT_RPM="$(find "${ARCH_DIR}" -name 'greenboot-[0-9]*.rpm' ! -name '*debug*' ! -name '*health*' -print -quit 2>/dev/null)" ||
+    [[ ! -f "${PR_GREENBOOT_RPM}" ]]; then
     greenprint "❌ PR greenboot RPM not found in ${ARCH_DIR}"
+    clean_up
+    exit 1
+fi
+
+if ! PR_HEALTHCHECKS_RPM="$(find "${NOARCH_DIR}" -name 'greenboot-default-health-checks-*.rpm' -print -quit 2>/dev/null)" ||
+    [[ ! -f "${PR_HEALTHCHECKS_RPM}" ]]; then
+    greenprint "❌ PR health-checks RPM not found in ${NOARCH_DIR}"
     clean_up
     exit 1
 fi
