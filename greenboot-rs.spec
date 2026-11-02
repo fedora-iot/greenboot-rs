@@ -41,20 +41,20 @@ Requires:	pam >= 1.4.0
 Recommends:	openssh
 
 %description -n %{pkgname}
-
-%{description}.
+Greenboot is a generic health check framework for systemd. It runs health
+checks after system upgrades to verify that the system is in a known-good
+state and allows automated rollback if a required check fails.
 
 %package -n %{pkgname}-default-health-checks
 Summary:	Series of optional and curated health checks
 License:	BSD-3-Clause
+BuildArch:	noarch
 Requires:	%{pkgname} = %{version}-%{release}
 Requires:	util-linux
 Requires:	jq
 
 %description -n %{pkgname}-default-health-checks
-%{description}.
-
-This package adds some default healthchecks for greenboot.
+This package adds some default health checks for greenboot.
 
 %prep
 %if %{with bundled_rust_deps}
@@ -150,7 +150,7 @@ fi
 %{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
 %changelog
-* Mon Oct 27 2026 Sarita Mahajan <sarmahaj@redhat.com> - 0.16.5
+* Tue Oct 27 2026 Sarita Mahajan <sarmahaj@redhat.com> - 0.16.5
 - Added backward compatibility for legacy rollback trigger (v0.16.2)
 - Added CI test for legacy trigger upgrade path
 
