@@ -34,6 +34,7 @@ provision:
   environment+:
     TEST_CASE: fedora-iot-raw
 
+# This test should always run on current GA and rawhide
 /legacy-trigger-compat:
   summary: Test backward compatibility for legacy rollback trigger (released ≤ v0.16.4 to current)
   environment+:

@@ -1,4 +1,7 @@
 ---
+# This test should always run on current GA (Fedora-latest) and rawhide
+# (Fedora-Rawhide). Use dynamic compose names so the workflow does not
+# need updating each Fedora release.
 name: Legacy Trigger Compatibility Test
 
 on:
@@ -7,11 +10,11 @@ on:
       compose:
         description: "Fedora compose to test on"
         required: true
-        default: "Fedora-44"
+        default: "Fedora-latest"
         type: choice
         options:
-          - Fedora-44
-          - Fedora-45
+          - Fedora-latest
+          - Fedora-Rawhide
   push:
     tags:
       - "v*"
@@ -28,11 +31,11 @@ jobs:
       - name: Run legacy trigger compatibility test
         uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
         with:
-          compose: ${{ github.event.inputs.compose || 'Fedora-44' }}
+          compose: ${{ github.event.inputs.compose || 'Fedora-latest' }}
           api_key: ${{ secrets.TF_API_PUB_KEY }}
           git_url: ${{ github.server_url }}/${{ github.repository }}
           git_ref: ${{ github.ref }}
-          tmt_context: "arch=x86_64;distro=fedora-44"
+          tmt_context: "arch=x86_64"
           tmt_plan_regex: legacy-trigger-compat
           variables: "ARCH=x86_64"
           timeout: 90

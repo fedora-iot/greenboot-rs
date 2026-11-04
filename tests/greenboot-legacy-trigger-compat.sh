@@ -50,15 +50,14 @@ TEMPDIR=$(mktemp -d)
 BOOT_ARGS="uefi"
 
 # For Fedora IoT testing
-case "${ID}-${VERSION_ID}" in
-    "fedora-44"|"fedora-45")
+case "${ID}" in
+    "fedora")
         FEDORA_VERSION="${VERSION_ID}"
         OS_VARIANT="fedora-unknown"
         LEGACY_GREENBOOT_VERSION="0.16.2-0.fc${VERSION_ID}"
         ;;
     *)
-        greenprint "This test is designed for Fedora IoT 44/45"
-        greenprint "Skipping on ${ID}-${VERSION_ID}"
+        greenprint "This test requires Fedora, skipping on ${ID}-${VERSION_ID}"
         exit 0
         ;;
 esac
@@ -82,7 +81,8 @@ greenprint ""
 # Install required packages
 greenprint "📦 Install required packages"
 sudo dnf install -y qemu-kvm libvirt-client libvirt-daemon-kvm virt-install \
-    kpartx e2fsprogs xz ansible-core firewalld make rpm-build rpmdevtools
+    kpartx e2fsprogs xz ansible-core firewalld make rpm-build rpmdevtools \
+    git cargo rust
 
 # Avoid collection installation failure
 for _ in $(seq 0 30); do
