@@ -101,3 +101,66 @@ To run integration tests:
 2. **Execution**:
    ```bash
    QUAY_USERNAME=<your_quay_username> QUAY_PASSWORD=<your_quay_password> make integration-test
+   ```
+
+
+### Testing bootc images with Brew RPMs
+
+On RHEL 9.9 or RHEL 10.3, run either bootc test script from `tests/` with
+`USE_BREW_RPMS=true` and direct download URLs for both binary RPMs from the
+same build. Use the actual published filenames and architectures; the helper
+preserves those filenames and validates package names, matching versions and
+compatibility with the host architecture. Build-directory URLs and source RPMs
+are not supported.
+
+`DOWNLOAD_NODE` remains required as a hostname (without a URL scheme) for the
+RHEL dependency repositories. Brew mode takes precedence over `COMPOSE_ID`;
+missing URLs or download errors fail the test instead of falling back to Copr.
+Internal Brew HTTPS downloads use `curl -k`, and Brew RPM installation uses
+`--nogpgcheck` to accommodate unsigned builds.
+
+With registry credentials exported, for example:
+
+```bash
+cd tests
+sudo env \
+  USE_BREW_RPMS=true \
+  BREW_GREENBOOT_RPM_URL="https://brew.example/path/greenboot-0.16.4-0.el10.x86_64.rpm" \
+  BREW_GREENBOOT_DEFAULT_HEALTH_CHECKS_RPM_URL="https://brew.example/path/greenboot-default-health-checks-0.16.4-0.el10.x86_64.rpm" \
+  DOWNLOAD_NODE="download-node.example.com" \
+  QUAY_USERNAME="${QUAY_USERNAME}" \
+  QUAY_PASSWORD="${QUAY_PASSWORD}" \
+  STAGE_REDHAT_IO_USERNAME="${STAGE_REDHAT_IO_USERNAME}" \
+  STAGE_REDHAT_IO_TOKEN="${STAGE_REDHAT_IO_TOKEN}" \
+  ./greenboot-bootc-qcow2.sh
+```
+
+Replace the example URLs with the build for the host's RHEL version and
+architecture. To test Anaconda ISO instead, use the same environment variables
+with `./greenboot-bootc-anaconda-iso.sh`. The scripts detect the distro as usual.
+
+
+### Testing OSTree images with Brew RPMs
+
+On RHEL 9.8 or RHEL 9.9, run the OSTree test from `tests/` with direct URLs
+for both binary RPMs from the same build. Replace the example URLs with the
+actual filenames for the host's RHEL version and architecture. RPM filenames
+are preserved. The script detects the distro automatically.
+
+```bash
+cd tests
+sudo env \
+  USE_BREW_RPMS=true \
+  BREW_GREENBOOT_RPM_URL="https://brew.example/path/greenboot-0.16.4-0.el9.x86_64.rpm" \
+  BREW_GREENBOOT_DEFAULT_HEALTH_CHECKS_RPM_URL="https://brew.example/path/greenboot-default-health-checks-0.16.4-0.el9.x86_64.rpm" \
+  DOWNLOAD_NODE="download-node.example.com" \
+  ./greenboot-ostree.sh
+```
+
+`DOWNLOAD_NODE` is a hostname without a URL scheme and is still required for
+RHEL installation content and dependency repositories. `COMPOSE_ID`,
+`PR_NUMBER`, and container-registry credentials are not required in Brew mode.
+Brew takes precedence over compose RPM selection. The downloaded RPMs use the
+existing local repository at `/var/www/html/packages`, with GPG checking
+already disabled in its composer source. Blueprint and dependency-resolution
+behavior, including the existing expected-build check, are unchanged.
