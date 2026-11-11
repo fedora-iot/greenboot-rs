@@ -11,7 +11,7 @@ use greenboot::{
 };
 use greenboot::{detect_os_deployment, get_booted_deployment_id, get_staged_deployment_id};
 use greenboot::{is_boot_rw, remount_boot_ro, remount_boot_rw};
-use std::{process::Command, sync::OnceLock};
+use std::{fs, process::Command, sync::OnceLock};
 
 /// greenboot config path
 static GREENBOOT_CONFIG_FILE: &str = "/etc/greenboot/greenboot.conf";
@@ -35,14 +35,22 @@ struct GreenbootConfig {
 
 impl GreenbootConfig {
     pub fn get_config() -> Self {
+        Self::get_config_at(GREENBOOT_CONFIG_FILE)
+    }
+
+    fn get_config_at(path: &str) -> Self {
         let mut config = Self {
             max_reboot: 3,                 // Default value
             disabled_healthchecks: vec![], //empty list
         };
 
-        // Try to load from config file
+        let contents = fs::read_to_string(path).unwrap_or_default();
+        // Fold multiline Bash arrays before passing the config to the INI parser.
         if let Ok(parsed_config) = Config::builder()
-            .add_source(File::new(GREENBOOT_CONFIG_FILE, FileFormat::Ini))
+            .add_source(File::from_str(
+                &fold_multiline_healthchecks(&contents),
+                FileFormat::Ini,
+            ))
             .build()
         {
             config.max_reboot = match parsed_config.get_int("GREENBOOT_MAX_BOOT_ATTEMPTS") {
@@ -69,6 +77,45 @@ impl GreenbootConfig {
         config
     }
 }
+
+/// Convert a multiline DISABLED_HEALTHCHECKS array to one INI value.
+fn fold_multiline_healthchecks(contents: &str) -> String {
+    let mut folded = String::with_capacity(contents.len());
+    let mut in_array = false;
+
+    for line in contents.lines() {
+        if in_array {
+            let item = line.trim();
+            if item.is_empty() || item.starts_with('#') {
+                continue;
+            }
+            folded.push(' ');
+            folded.push_str(item);
+            if item.ends_with(')') {
+                folded.push('\n');
+                in_array = false;
+            }
+        } else {
+            folded.push_str(line);
+            if line.split_once('=').is_some_and(|(key, value)| {
+                key.trim() == "DISABLED_HEALTHCHECKS"
+                    && value.trim_start().starts_with('(')
+                    && !value.contains(')')
+            }) {
+                in_array = true;
+            } else {
+                folded.push('\n');
+            }
+        }
+    }
+
+    if in_array {
+        folded.push('\n');
+    }
+
+    folded
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 /// log level for journald logging
 enum LogLevel {
@@ -513,5 +560,99 @@ fn main() -> Result<()> {
             log::info!("Rollback trigger set successfully.");
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GreenbootConfig;
+    use std::fs;
+    use tempfile::NamedTempFile;
+
+    fn read_config(contents: &str) -> GreenbootConfig {
+        let file = NamedTempFile::new().unwrap();
+        fs::write(file.path(), contents).unwrap();
+        GreenbootConfig::get_config_at(file.path().to_str().unwrap())
+    }
+
+    #[test]
+    fn parses_reported_multiline_disabled_healthchecks_format() {
+        let config = read_config(concat!(
+            "GREENBOOT_MAX_BOOT_ATTEMPTS=5\n",
+            "DISABLED_HEALTHCHECKS=( \n",
+            "    \"01_repository_dns_check.sh\" \n",
+            "    \"02_watchdog.sh\" \n",
+            ")\n",
+        ));
+
+        assert_eq!(config.max_reboot, 5);
+        assert_eq!(
+            config.disabled_healthchecks,
+            ["01_repository_dns_check.sh", "02_watchdog.sh"]
+        );
+    }
+
+    #[test]
+    fn multiline_disabled_healthchecks_preserve_other_settings() {
+        let config = read_config(
+            r#"DISABLED_HEALTHCHECKS=(
+    # These checks are disabled on this system.
+    "01_repository_dns_check.sh"
+    "02_watchdog.sh"
+)
+GREENBOOT_MAX_BOOT_ATTEMPTS=5
+"#,
+        );
+
+        assert_eq!(config.max_reboot, 5);
+        assert_eq!(
+            config.disabled_healthchecks,
+            ["01_repository_dns_check.sh", "02_watchdog.sh"]
+        );
+    }
+
+    #[test]
+    fn parses_multiline_array_with_items_on_parenthesis_lines() {
+        let config = read_config(concat!(
+            "DISABLED_HEALTHCHECKS=(\"01_repository_dns_check.sh\"\n",
+            "\n",
+            "    \"02_watchdog.sh\")\n",
+        ));
+
+        assert_eq!(
+            config.disabled_healthchecks,
+            ["01_repository_dns_check.sh", "02_watchdog.sh"]
+        );
+    }
+
+    #[test]
+    fn empty_multiline_disabled_healthchecks_array() {
+        let config = read_config("DISABLED_HEALTHCHECKS=(\n    # No checks disabled.\n)\n");
+
+        assert!(config.disabled_healthchecks.is_empty());
+    }
+
+    #[test]
+    fn missing_disabled_healthchecks_entry_uses_empty_list() {
+        let config = read_config("GREENBOOT_MAX_BOOT_ATTEMPTS=5\n");
+
+        assert_eq!(config.max_reboot, 5);
+        assert!(config.disabled_healthchecks.is_empty());
+    }
+
+    #[test]
+    fn single_line_and_empty_disabled_healthchecks_still_parse() {
+        let config = read_config(
+            "GREENBOOT_MAX_BOOT_ATTEMPTS=4\nDISABLED_HEALTHCHECKS=(\"01_repository_dns_check.sh\" \"02_watchdog.sh\")\n",
+        );
+        assert_eq!(config.max_reboot, 4);
+        assert_eq!(
+            config.disabled_healthchecks,
+            ["01_repository_dns_check.sh", "02_watchdog.sh"]
+        );
+
+        let empty = read_config("DISABLED_HEALTHCHECKS=()\n");
+        assert_eq!(empty.max_reboot, 3);
+        assert!(empty.disabled_healthchecks.is_empty());
     }
 }
