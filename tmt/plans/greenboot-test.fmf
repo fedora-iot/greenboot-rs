@@ -24,6 +24,12 @@ provision:
   environment+:
     TEST_CASE: bootc-anaconda-iso
 
+/bootc-to-disk-rootfs-boot:
+  summary: Test greenboot with bootc install to-disk, /boot on the root filesystem
+  environment+:
+    TEST_CASE: bootc-qcow2
+    BOOT_LAYOUT: rootfs
+
 /ostree-commit:
   summary: Test greenboot with ostree commit
   environment+:

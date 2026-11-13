@@ -29,6 +29,16 @@ fi
 # Setup variables
 ARCH=$(uname -m)
 TEST_UUID=qcow2-$((1 + RANDOM % 1000000))
+# Disk layout for the VM:
+#   separate (default): bootc-image-builder qcow2, dedicated /boot partition.
+#   rootfs: "bootc install to-disk", /boot is a directory on the root
+#     filesystem. Without a separate /boot there is no boot.mount to stop
+#     greenboot-set-rollback-trigger at shutdown (issue #218).
+BOOT_LAYOUT="${BOOT_LAYOUT:-separate}"
+case "${BOOT_LAYOUT}" in
+    separate|rootfs) ;;
+    *) echo "Unknown BOOT_LAYOUT: ${BOOT_LAYOUT}" >&2; exit 1 ;;
+esac
 TEMPDIR=$(mktemp -d)
 GUEST_ADDRESS=192.168.100.50
 SSH_OPTIONS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5)
@@ -359,6 +369,19 @@ COPY passing_binary /etc/greenboot/check/required.d/
 COPY failing_binary /etc/greenboot/check/wanted.d/
 EOF
 
+# bootc-image-builder creates the user from config.json; "bootc install
+# to-disk" has no such step, so bake the user into the image instead.
+if [[ "${BOOT_LAYOUT}" == rootfs ]]; then
+    tee -a Containerfile > /dev/null << EOF
+RUN useradd -m -G wheel ${EDGE_USER} && echo '${EDGE_USER}:${EDGE_USER_PASSWORD}' | chpasswd
+RUN mkdir -p /home/${EDGE_USER}/.ssh && \
+    echo '${SSH_KEY_PUB}' > /home/${EDGE_USER}/.ssh/authorized_keys && \
+    chmod 700 /home/${EDGE_USER}/.ssh && \
+    chmod 600 /home/${EDGE_USER}/.ssh/authorized_keys && \
+    chown -R ${EDGE_USER}:${EDGE_USER} /home/${EDGE_USER}/.ssh
+EOF
+fi
+
 greenprint "Building container (retrying until Copr build is available)"
 build_success=false
 for attempt in $(seq 1 10); do
@@ -383,6 +406,29 @@ podman push quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID}
 ## BIB to convert bootc container to qcow2/iso images
 ##
 ###########################################################
+if [[ "${BOOT_LAYOUT}" == rootfs ]]; then
+greenprint "Using bootc install to-disk (no separate /boot)"
+sudo rm -fr output && mkdir -p output
+truncate -s 10G output/disk.raw
+podman run \
+    --rm \
+    --privileged \
+    --pid=host \
+    --security-opt label=type:unconfined_t \
+    -v /dev:/dev \
+    -v /var/lib/containers:/var/lib/containers \
+    -v $(pwd)/output:/output \
+    quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID} \
+    bootc install to-disk \
+        --via-loopback \
+        --generic-image \
+        --filesystem xfs \
+        --karg console=ttyS0,115200 \
+        /output/disk.raw
+mkdir -p output/qcow2
+qemu-img convert -f raw -O qcow2 output/disk.raw output/qcow2/disk.qcow2
+rm -f output/disk.raw
+else
 greenprint "Using BIB to convert container to qcow2"
 tee config.json > /dev/null << EOF
 {
@@ -418,6 +464,7 @@ podman run \
     --rootfs xfs \
     --use-librepo=true \
     quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID}
+fi
 
 ###########################################################
 ##
@@ -497,6 +544,9 @@ podman push quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID}
 ###########################################################
 greenprint "Get /boot mount status"
 BOOT_MOUNT_STATUS=$(ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ${EDGE_USER}@${GUEST_ADDRESS} "findmnt -r -o OPTIONS -n /boot | awk -F ',' '{print \$1}'")
+# -T resolves the filesystem that holds /boot, which is still meaningful when
+# /boot is not its own mount (BOOT_LAYOUT=rootfs).
+BOOT_FS_MOUNT_STATUS=$(ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ${EDGE_USER}@${GUEST_ADDRESS} "findmnt -r -o OPTIONS -n -T /boot | awk -F ',' '{print \$1}'")
 greenprint "Bootc upgrade and reboot"
 sudo ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ${EDGE_USER}@${GUEST_ADDRESS} "echo ${EDGE_USER_PASSWORD} |sudo -S bootc upgrade"
 sudo ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ${EDGE_USER}@${GUEST_ADDRESS} "echo ${EDGE_USER_PASSWORD} |nohup sudo -S systemctl reboot &>/dev/null & exit"
@@ -539,8 +589,18 @@ ansible_become_method=sudo
 ansible_become_pass=${EDGE_USER_PASSWORD}
 EOF
 
-# Test greenboot functionality
-ansible-playbook -v -i ${TEMPDIR}/inventory -e boot_mount_status="${BOOT_MOUNT_STATUS}" greenboot-bootc.yaml || RESULTS=0
+# Pass the mount status as JSON: "-e key=value" splits on whitespace, so a
+# multi-line findmnt result (stacked mounts on /boot) would be cut to its
+# first line.
+python3 - "${BOOT_MOUNT_STATUS}" "${BOOT_FS_MOUNT_STATUS}" "${BOOT_LAYOUT}" > "${TEMPDIR}/extra_vars.json" << 'EOF'
+import json, sys
+json.dump({
+    "boot_mount_status": sys.argv[1],
+    "boot_fs_mount_status": sys.argv[2],
+    "boot_layout": sys.argv[3],
+}, sys.stdout)
+EOF
+ansible-playbook -v -i ${TEMPDIR}/inventory -e @"${TEMPDIR}/extra_vars.json" greenboot-bootc.yaml || RESULTS=0
 
 # Test result checking
 check_result
