@@ -291,7 +291,6 @@ rm -rf rpmbuild/RPMS
 make rpm
 
 ARCH_DIR="$(pwd)/rpmbuild/RPMS/$(uname -m)"
-NOARCH_DIR="$(pwd)/rpmbuild/RPMS/noarch"
 
 if ! PR_GREENBOOT_RPM="$(find "${ARCH_DIR}" -name 'greenboot-[0-9]*.rpm' ! -name '*debug*' ! -name '*health*' -print -quit 2>/dev/null)" ||
     [[ ! -f "${PR_GREENBOOT_RPM}" ]]; then
@@ -300,9 +299,9 @@ if ! PR_GREENBOOT_RPM="$(find "${ARCH_DIR}" -name 'greenboot-[0-9]*.rpm' ! -name
     exit 1
 fi
 
-if ! PR_HEALTHCHECKS_RPM="$(find "${NOARCH_DIR}" -name 'greenboot-default-health-checks-*.rpm' -print -quit 2>/dev/null)" ||
+if ! PR_HEALTHCHECKS_RPM="$(find "${ARCH_DIR}" -name 'greenboot-default-health-checks-*.rpm' -print -quit 2>/dev/null)" ||
     [[ ! -f "${PR_HEALTHCHECKS_RPM}" ]]; then
-    greenprint "❌ PR health-checks RPM not found in ${NOARCH_DIR}"
+    greenprint "❌ PR health-checks RPM not found in ${ARCH_DIR}"
     clean_up
     exit 1
 fi
