@@ -7,7 +7,7 @@
 %bcond bundled_rust_deps %{defined rhel}
 
 Name:		greenboot-rs
-Version:	0.16.5
+Version:	0.16.6
 Release:	0%{?dist}
 Summary:	Generic Health Check Framework for systemd
 # Aggregated license of statically linked dependencies as per %%cargo_license_summary
@@ -48,7 +48,6 @@ state and allows automated rollback if a required check fails.
 %package -n %{pkgname}-default-health-checks
 Summary:	Series of optional and curated health checks
 License:	BSD-3-Clause
-BuildArch:	noarch
 Requires:	%{pkgname} = %{version}-%{release}
 Requires:	util-linux
 Requires:	jq
@@ -150,6 +149,10 @@ fi
 %{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
 %changelog
+* Fri Nov 13 2026 Sayan Paul <paul.sayan@gmail.com> - 0.16.6
+- Restore architecture-specific default health checks for Fedora composes
+- Update legacy-trigger CI to locate the architecture-specific RPM
+
 * Tue Oct 27 2026 Sarita Mahajan <sarmahaj@redhat.com> - 0.16.5
 - Added backward compatibility for legacy rollback trigger (v0.16.2)
 - Added CI test for legacy trigger upgrade path
