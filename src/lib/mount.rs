@@ -20,14 +20,18 @@ pub enum MountError {
 
 fn is_boot_rw_at(mounts_path: &Path) -> Result<bool, MountError> {
     let mounts = fs::read_to_string(mounts_path).map_err(|_| MountError::MountInfoError)?;
+    // Later entries are mounted on top of earlier ones (e.g. an automounted
+    // /boot is listed as autofs first, then the real filesystem), so the
+    // last /boot entry is the effective one.
+    let mut boot_rw = None;
     for line in mounts.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 4 && parts.get(1) == Some(&"/boot") {
-            let options = parts[3];
-            return Ok(options.contains("rw") && !options.contains("ro"));
+            // Match whole options; "errors=remount-ro" or "minproto=5" are not "ro"
+            boot_rw = Some(parts[3].split(',').any(|option| option == "rw"));
         }
     }
-    Err(MountError::MountInfoError)
+    boot_rw.ok_or(MountError::MountInfoError)
 }
 
 /// Default helper: check /boot RW state using shared MOUNT_INFO_PATH
@@ -191,5 +195,55 @@ mod test {
         // Test malformed line - should error
         let malformed_path = create_mock_file("incomplete fields");
         assert!(is_boot_rw_at(&malformed_path).is_err());
+    }
+
+    #[test]
+    fn test_is_boot_rw_without_separate_boot() {
+        // /boot on the root filesystem is bind-mounted into the ostree
+        // deployment, so it shares its source device with /sysroot.
+        // The ESP has the opposite state to show it is not taken for /boot.
+        let rw_path = create_mock_file(
+            "/dev/vda3 /sysroot xfs ro,relatime 0 0\n\
+             /dev/vda3 /boot xfs rw,relatime 0 0\n\
+             /dev/vda2 /boot/efi vfat ro,relatime 0 0\n",
+        );
+        assert!(is_boot_rw_at(&rw_path).unwrap());
+
+        let ro_path = create_mock_file(
+            "/dev/vda3 /sysroot xfs ro,relatime 0 0\n\
+             /dev/vda3 /boot xfs ro,relatime 0 0\n\
+             /dev/vda2 /boot/efi vfat rw,relatime 0 0\n",
+        );
+        assert!(!is_boot_rw_at(&ro_path).unwrap());
+
+        // Only the ESP mounted, no /boot entry - /boot/efi must not be
+        // matched as /boot, so this should error
+        let esp_only_path = create_mock_file("/dev/vda2 /boot/efi vfat rw,relatime 0 0\n");
+        assert!(is_boot_rw_at(&esp_only_path).is_err());
+    }
+
+    #[test]
+    fn test_is_boot_rw_with_automounted_boot() {
+        // gpt-auto mounts /boot on demand: an autofs entry (always rw) is
+        // listed first and the real filesystem is mounted on top of it.
+        let autofs = "systemd-1 /boot autofs rw,relatime,fd=57,pgrp=1,timeout=120,\
+                      minproto=5,maxproto=5,direct,pipe_ino=3391 0 0\n";
+
+        // Not accessed yet - only the autofs entry exists. This reports the
+        // autofs entry's own rw flag, so remount_boot_rw() skips the remount
+        // and the first write to /boot triggers the automount. That relies
+        // on gpt-auto mounting the real filesystem read-write.
+        let idle_path = create_mock_file(autofs);
+        assert!(is_boot_rw_at(&idle_path).unwrap());
+
+        let rw_path = create_mock_file(&format!(
+            "{autofs}/dev/vda2 /boot vfat rw,relatime,errors=remount-ro 0 0\n"
+        ));
+        assert!(is_boot_rw_at(&rw_path).unwrap());
+
+        let ro_path = create_mock_file(&format!(
+            "{autofs}/dev/vda2 /boot vfat ro,relatime,errors=remount-ro 0 0\n"
+        ));
+        assert!(!is_boot_rw_at(&ro_path).unwrap());
     }
 }
