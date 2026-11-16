@@ -82,7 +82,7 @@ greenprint ""
 # Install required packages
 greenprint "📦 Install required packages"
 sudo dnf install -y qemu-kvm libvirt-client libvirt-daemon-kvm virt-install \
-    kpartx e2fsprogs xz ansible-core firewalld rpm-build rpmdevtools
+    kpartx e2fsprogs xz ansible-core firewalld make rpm-build rpmdevtools
 
 # Avoid collection installation failure
 for _ in $(seq 0 30); do
