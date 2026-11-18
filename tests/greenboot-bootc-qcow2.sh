@@ -344,7 +344,7 @@ else
 RUN (dnf install -y 'dnf5-command(copr)' || dnf install -y 'dnf-command(copr)') && \
     dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUM} ${COPR_CHROOT} && \
     dnf clean metadata && \
-    dnf download --disablerepo='*' --enablerepo='${GREENBOOT_COPR_REPO_ID}' --destdir /tmp/copr-rpms greenboot greenboot-default-health-checks && \
+    dnf download --disablerepo='*' --enablerepo='${GREENBOOT_COPR_REPO_ID}' --arch "${ARCH}" --destdir /tmp/copr-rpms greenboot greenboot-default-health-checks && \
     dnf install -y /tmp/copr-rpms/*.rpm && \
     rm -rf /tmp/copr-rpms && \
     systemctl enable greenboot-healthcheck.service
