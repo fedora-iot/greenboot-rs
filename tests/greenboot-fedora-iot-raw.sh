@@ -329,7 +329,7 @@ greenprint "📦 Downloading greenboot RPMs from Copr"
 download_result=1
 for _ in $(seq 0 30); do
     if ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
-        "mkdir -p /tmp/greenboot-rpms && dnf download --disablerepo='*' --enablerepo='${GREENBOOT_COPR_REPO_ID}' --destdir /tmp/greenboot-rpms greenboot greenboot-default-health-checks"; then
+        "mkdir -p /tmp/greenboot-rpms && dnf download --disablerepo='*' --enablerepo='${GREENBOOT_COPR_REPO_ID}' --arch "${ARCH}" --destdir /tmp/greenboot-rpms greenboot greenboot-default-health-checks"; then
         download_result=0
         break
     fi
