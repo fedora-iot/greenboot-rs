@@ -2,7 +2,8 @@
 - hosts: greenboot_guest
   become: no
   vars:
-    boot_mount_status: ""
+    boot_layout: "separate"
+    boot_fs_mount_status: ""
     total_counter: "0"
     failed_counter: "0"
 
@@ -16,6 +17,28 @@
     - name: check bootc status
       command: bootc status
       ignore_errors: yes
+
+    # case: rootfs layout must really have /boot on the root filesystem.
+    - name: /boot should be on the same filesystem as /sysroot
+      when: boot_layout == "rootfs"
+      block:
+        - name: get device IDs of /boot and /sysroot
+          command: stat -c %d /boot /sysroot
+          register: result_boot_sysroot_dev
+          become: yes
+
+        - assert:
+            that:
+              - result_boot_sysroot_dev.stdout_lines | unique | length == 1
+            fail_msg: "/boot is on a separate filesystem"
+            success_msg: "/boot is on the root filesystem"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
 
     # case: check installed greenboot packages
     - name: greenboot should be installed
@@ -64,16 +87,32 @@
         - name: greenboot healthcheck service should be active
           command: systemctl is-active greenboot-healthcheck.service
           register: result_greenboot_active
+          when: boot_layout == "separate"
+
+        # /boot is automounted in the rootfs layout; its idle timeout unmounts /boot
+        # and RequiresMountsFor=/boot legitimately stops the service, so check the
+        # run result instead of the live state.
+        - name: greenboot healthcheck should have run successfully
+          command: systemctl show greenboot-healthcheck.service --property=Result --value
+          register: result_greenboot_result
+          when: boot_layout == "rootfs"
 
         - assert:
             that:
-              - result_greenboot_active.stdout == "active"
+              - (boot_layout == "separate" and result_greenboot_active.stdout == "active")
+                or (boot_layout == "rootfs" and result_greenboot_result.stdout == "success")
             fail_msg: "greenboot healthcheck service is not active"
             success_msg: "greenboot healthcheck service is active"
       always:
         - set_fact:
             total_counter: "{{ total_counter | int + 1 }}"
       rescue:
+        - name: collect why greenboot-healthcheck is not active
+          shell: |
+            systemctl --no-pager status greenboot-healthcheck.service boot.mount
+            findmnt /boot
+            journalctl -b -0 -o short-precise --no-pager | grep -B 30 -A 5 'Stopped greenboot-healthcheck'
+          ignore_errors: yes
         - name: failed count + 1
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
@@ -452,6 +491,29 @@
               - "'boot_success=1' in result_grubenv.stdout"
             fail_msg: "Not found boot_success=1"
             success_msg: "Found boot_success=1"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: in the rootfs layout /boot is a stacked mount on the root
+    # filesystem. Also compare the mount status of the filesystem holding /boot.
+    - name: filesystem holding /boot should keep its mount status
+      when: boot_layout == "rootfs"
+      block:
+        - name: check mount status of the filesystem holding /boot after rollback
+          shell: findmnt -r -o OPTIONS -n -T /boot | awk -F "," '{print $1}'
+          register: result_boot_fs_mount_after_rollback
+
+        - assert:
+            that:
+              - boot_fs_mount_status | length > 0
+              - boot_fs_mount_status == result_boot_fs_mount_after_rollback.stdout
+            fail_msg: "mount status of the filesystem holding /boot is not preserved"
+            success_msg: "mount status of the filesystem holding /boot is preserved"
       always:
         - set_fact:
             total_counter: "{{ total_counter | int + 1 }}"
