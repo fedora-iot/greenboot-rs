@@ -7,7 +7,7 @@
 %bcond bundled_rust_deps %{defined rhel}
 
 Name:		greenboot-rs
-Version:	0.16.6
+Version:	0.16.7
 Release:	0%{?dist}
 Summary:	Generic Health Check Framework for systemd
 # Aggregated license of statically linked dependencies as per %%cargo_license_summary
@@ -149,6 +149,10 @@ fi
 %{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
 %changelog
+* Tue Nov 24 2026 Sayan Paul <saypaul@redhat.com> - 0.16.7
+- fix multi-line config parsing and new line in grub cfg
+- fix stop set-rollback-trigger at shutdown so ExecStop runs
+
 * Fri Nov 13 2026 Sayan Paul <saypaul@redhat.com> - 0.16.6
 - Revert noarch rpm built of default healthchecks
 
