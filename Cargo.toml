@@ -1,6 +1,6 @@
 [package]
 name = "greenboot"
-version = "0.16.6"
+version = "0.16.7"
 edition = "2024"
 license = "BSD-3-Clause"
 
